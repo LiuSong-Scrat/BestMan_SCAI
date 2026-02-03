@@ -1,0 +1,21 @@
+[
+    {
+        "containers": [],
+        "chemicals": [],
+        "others": [
+            {
+                "category": "Others",
+                "name": "unknown object",
+                "physical_attributes": "Fragile",
+                "chemical_attributes": "Heat-resistant",
+                "source": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object1.png",
+                "bounding box": [
+                    483.28521728515625,
+                    217.04519653320312,
+                    649.1736450195312,
+                    390.2532653808594
+                ]
+            }
+        ]
+    }
+]

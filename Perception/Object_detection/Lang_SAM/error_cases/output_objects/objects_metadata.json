@@ -1,0 +1,14 @@
+{
+    "object1": {
+        "score": 0.6397360563278198,
+        "label": "objects",
+        "box": [
+            483.28521728515625,
+            217.04519653320312,
+            649.1736450195312,
+            390.2532653808594
+        ],
+        "mask_score": 0.98828125,
+        "image_path": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object1.png"
+    }
+}

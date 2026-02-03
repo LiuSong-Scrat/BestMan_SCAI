@@ -1,0 +1,46 @@
+[
+    {
+        "containers": [
+            {
+                "category": "Chemical Container",
+                "name": "Measuring Cup",
+                "size": "70mm x 70mm x 60mm",
+                "pose": [
+                    0,
+                    0,
+                    60,
+                    0,
+                    0,
+                    0,
+                    1
+                ],
+                "physical_attributes": "Fragile",
+                "chemical_attributes": "Heat-resistant",
+                "source": "Images/beaker_cup.png"
+            }
+        ],
+        "chemicals": []
+    },
+    {
+        "containers": [],
+        "chemicals": [
+            {
+                "category": "Chemical Substance",
+                "name": "Ammonium Dihydrogen Phosphate (NH4H2PO4)",
+                "size": "Crystalline Powder",
+                "pose": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    1
+                ],
+                "physical_attributes": "White, crystalline",
+                "chemical_attributes": "Soluble in water",
+                "source": "Images/chem.png"
+            }
+        ]
+    }
+]

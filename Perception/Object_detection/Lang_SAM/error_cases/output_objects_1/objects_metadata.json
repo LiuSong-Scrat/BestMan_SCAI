@@ -1,0 +1,86 @@
+{
+    "object1": {
+        "score": 0.5414088368415833,
+        "label": "objects",
+        "box": [
+            494.368896484375,
+            51.143558502197266,
+            671.4024658203125,
+            240.80117797851562
+        ],
+        "mask_score": 0.98828125,
+        "image_path": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object1.png"
+    },
+    "object2": {
+        "score": 0.5346124768257141,
+        "label": "objects",
+        "box": [
+            490.2267150878906,
+            296.09197998046875,
+            665.8046875,
+            456.1499328613281
+        ],
+        "mask_score": 0.98828125,
+        "image_path": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object2.png"
+    },
+    "object3": {
+        "score": 0.5254905819892883,
+        "label": "objects",
+        "box": [
+            734.9136962890625,
+            42.1137809753418,
+            916.8908081054688,
+            234.70191955566406
+        ],
+        "mask_score": 0.98828125,
+        "image_path": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object3.png"
+    },
+    "object4": {
+        "score": 0.5098254084587097,
+        "label": "objects",
+        "box": [
+            507.04278564453125,
+            506.5089416503906,
+            680.8441772460938,
+            698.2447509765625
+        ],
+        "mask_score": 0.98046875,
+        "image_path": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object4.png"
+    },
+    "object5": {
+        "score": 0.5211055874824524,
+        "label": "objects",
+        "box": [
+            727.3107299804688,
+            281.55035400390625,
+            904.7672119140625,
+            443.9279479980469
+        ],
+        "mask_score": 0.98828125,
+        "image_path": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object5.png"
+    },
+    "object6": {
+        "score": 0.5343695282936096,
+        "label": "objects",
+        "box": [
+            728.2310791015625,
+            506.14312744140625,
+            902.3414306640625,
+            701.7073364257812
+        ],
+        "mask_score": 0.98046875,
+        "image_path": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object6.png"
+    },
+    "object7": {
+        "score": 0.5309661626815796,
+        "label": "objects",
+        "box": [
+            230.5001678466797,
+            278.9398193359375,
+            452.083984375,
+            441.72821044921875
+        ],
+        "mask_score": 0.9921875,
+        "image_path": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object7.png"
+    }
+}

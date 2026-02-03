@@ -1,0 +1,142 @@
+[
+    {
+        "containers": [
+            {
+                "category": "Chemical Container",
+                "name": "glass tall beaker",
+                "physical_attributes": "Fragile",
+                "chemical_attributes": "Heat-resistant",
+                "containing": "None",
+                "source": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object1.png",
+                "bounding box": [
+                    494.368896484375,
+                    51.143558502197266,
+                    671.4024658203125,
+                    240.80117797851562
+                ]
+            }
+        ],
+        "chemicals": [],
+        "others": []
+    },
+    {
+        "containers": [
+            {
+                "category": "Chemical Container",
+                "name": "glass tall beaker",
+                "physical_attributes": "Fragile",
+                "chemical_attributes": "Heat-resistant",
+                "containing": "None",
+                "source": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object2.png",
+                "bounding box": [
+                    490.2267150878906,
+                    296.09197998046875,
+                    665.8046875,
+                    456.1499328613281
+                ]
+            }
+        ],
+        "chemicals": [],
+        "others": []
+    },
+    {
+        "containers": [
+            {
+                "category": "Chemical Container",
+                "name": "glass tall beaker",
+                "physical_attributes": "Fragile",
+                "chemical_attributes": "Heat-resistant",
+                "containing": "None",
+                "source": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object3.png",
+                "bounding box": [
+                    734.9136962890625,
+                    42.1137809753418,
+                    916.8908081054688,
+                    234.70191955566406
+                ]
+            }
+        ],
+        "chemicals": [],
+        "others": []
+    },
+    {
+        "containers": [
+            {
+                "category": "Chemical Container",
+                "name": "glass tall beaker",
+                "physical_attributes": "Fragile",
+                "chemical_attributes": "Heat-resistant",
+                "containing": "None",
+                "source": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object4.png",
+                "bounding box": [
+                    507.04278564453125,
+                    506.5089416503906,
+                    680.8441772460938,
+                    698.2447509765625
+                ]
+            }
+        ],
+        "chemicals": [],
+        "others": []
+    },
+    {
+        "containers": [
+            {
+                "category": "Chemical Container",
+                "name": "glass tall beaker",
+                "physical_attributes": "Fragile",
+                "chemical_attributes": "Heat-resistant",
+                "containing": "None",
+                "source": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object5.png",
+                "bounding box": [
+                    727.3107299804688,
+                    281.55035400390625,
+                    904.7672119140625,
+                    443.9279479980469
+                ]
+            }
+        ],
+        "chemicals": [],
+        "others": []
+    },
+    {
+        "containers": [
+            {
+                "category": "Chemical Container",
+                "name": "glass tall beaker",
+                "physical_attributes": "Fragile",
+                "chemical_attributes": "Heat-resistant",
+                "containing": "None",
+                "source": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object6.png",
+                "bounding box": [
+                    728.2310791015625,
+                    506.14312744140625,
+                    902.3414306640625,
+                    701.7073364257812
+                ]
+            }
+        ],
+        "chemicals": [],
+        "others": []
+    },
+    {
+        "containers": [
+            {
+                "category": "Chemical Container",
+                "name": "glass tall beaker",
+                "physical_attributes": "Fragile",
+                "chemical_attributes": "Heat-resistant",
+                "containing": "None",
+                "source": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object7.png",
+                "bounding box": [
+                    230.5001678466797,
+                    278.9398193359375,
+                    452.083984375,
+                    441.72821044921875
+                ]
+            }
+        ],
+        "chemicals": [],
+        "others": []
+    }
+]

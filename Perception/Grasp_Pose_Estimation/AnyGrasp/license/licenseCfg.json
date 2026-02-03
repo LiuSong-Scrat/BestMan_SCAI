@@ -1,0 +1,14 @@
+{
+    "version": "3.1.0",
+    "feature_id": "1125770674699274714",
+    "public_key": "YanDing.public_key",
+    "signature": "YanDing.signature",
+    "license": "YanDing.lic",
+    "toolbox": [
+        {
+            "name": "Basic",
+            "type": "PERMANENT",
+            "data": ""
+        }
+    ]
+}

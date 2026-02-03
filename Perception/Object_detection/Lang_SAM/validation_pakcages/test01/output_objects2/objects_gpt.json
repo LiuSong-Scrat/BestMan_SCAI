@@ -1,0 +1,42 @@
+[
+    {
+        "containers": [
+            {
+                "category": "Chemical Container",
+                "name": "glass graduated cylinder",
+                "physical_attributes": "Fragile",
+                "chemical_attributes": "Heat-resistant",
+                "containing": "None",
+                "source": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object1.png",
+                "bounding box": [
+                    587.3612060546875,
+                    503.1991882324219,
+                    746.6594848632812,
+                    703.7304077148438
+                ]
+            }
+        ],
+        "chemicals": [],
+        "others": []
+    },
+    {
+        "containers": [
+            {
+                "category": "Chemical Container",
+                "name": "glass tall beaker",
+                "physical_attributes": "Fragile",
+                "chemical_attributes": "Heat-resistant",
+                "containing": "None",
+                "source": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object2.png",
+                "bounding box": [
+                    581.6207885742188,
+                    296.41143798828125,
+                    692.6757202148438,
+                    412.8177490234375
+                ]
+            }
+        ],
+        "chemicals": [],
+        "others": []
+    }
+]

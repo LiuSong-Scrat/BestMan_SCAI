@@ -1,0 +1,26 @@
+{
+    "object1": {
+        "score": 0.6123096346855164,
+        "label": "objects",
+        "box": [
+            395.3662109375,
+            149.25006103515625,
+            572.3619995117188,
+            317.8808288574219
+        ],
+        "mask_score": 0.9921875,
+        "image_path": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object1.png"
+    },
+    "object2": {
+        "score": 0.6062653660774231,
+        "label": "objects",
+        "box": [
+            266.43231201171875,
+            422.9449157714844,
+            481.6343688964844,
+            600.794189453125
+        ],
+        "mask_score": 0.98828125,
+        "image_path": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object2.png"
+    }
+}

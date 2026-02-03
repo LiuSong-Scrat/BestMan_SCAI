@@ -1,0 +1,74 @@
+{
+    "object1": {
+        "score": 0.5295066833496094,
+        "label": "objects",
+        "box": [
+            485.9195556640625,
+            89.02471160888672,
+            647.3123779296875,
+            267.6575622558594
+        ],
+        "mask_score": 0.98046875,
+        "image_path": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object1.png"
+    },
+    "object2": {
+        "score": 0.5464961528778076,
+        "label": "objects",
+        "box": [
+            486.07025146484375,
+            351.8811340332031,
+            701.393798828125,
+            568.1322631835938
+        ],
+        "mask_score": 0.98828125,
+        "image_path": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object2.png"
+    },
+    "object3": {
+        "score": 0.5061641931533813,
+        "label": "objects",
+        "box": [
+            730.7327270507812,
+            183.51914978027344,
+            913.256103515625,
+            350.26513671875
+        ],
+        "mask_score": 0.984375,
+        "image_path": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object3.png"
+    },
+    "object4": {
+        "score": 0.48724642395973206,
+        "label": "objects",
+        "box": [
+            686.281005859375,
+            11.3578462600708,
+            792.318115234375,
+            173.4884796142578
+        ],
+        "mask_score": 0.95703125,
+        "image_path": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object4.png"
+    },
+    "object5": {
+        "score": 0.5220803618431091,
+        "label": "objects",
+        "box": [
+            225.50808715820312,
+            28.677631378173828,
+            459.8077087402344,
+            236.09979248046875
+        ],
+        "mask_score": 0.98828125,
+        "image_path": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object5.png"
+    },
+    "object6": {
+        "score": 0.4590761363506317,
+        "label": "objects",
+        "box": [
+            265.515380859375,
+            281.3514404296875,
+            470.7027587890625,
+            447.3342590332031
+        ],
+        "mask_score": 0.98828125,
+        "image_path": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object6.png"
+    }
+}

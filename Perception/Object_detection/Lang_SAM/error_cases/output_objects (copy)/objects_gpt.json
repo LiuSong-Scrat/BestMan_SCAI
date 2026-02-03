@@ -1,0 +1,176 @@
+[
+    {
+        "containers": [
+            {
+                "category": "Chemical Container",
+                "name": "glass beaker",
+                "physical_attributes": "Fragile, transparent",
+                "chemical_attributes": "Heat-resistant, corrosion-resistant",
+                "containing": "None",
+                "source": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object1.png",
+                "bounding box": [
+                    459.4625244140625,
+                    211.6914825439453,
+                    659.2203369140625,
+                    432.23992919921875
+                ]
+            }
+        ],
+        "chemicals": [],
+        "others": []
+    },
+    {
+        "containers": [
+            {
+                "category": "Chemical Container",
+                "name": "glass beaker",
+                "physical_attributes": "Transparent, cylindrical",
+                "chemical_attributes": "Heat-resistant, corrosion-resistant",
+                "containing": "None",
+                "source": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object2.png",
+                "bounding box": [
+                    529.4812622070312,
+                    478.51409912109375,
+                    744.9591674804688,
+                    718.5150756835938
+                ]
+            }
+        ],
+        "chemicals": [],
+        "others": []
+    },
+    {
+        "containers": [
+            {
+                "category": "Chemical Container",
+                "name": "glass tall beaker",
+                "physical_attributes": "Fragile, transparent",
+                "chemical_attributes": "Heat-resistant, corrosion-resistant",
+                "containing": "None",
+                "source": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object3.png",
+                "bounding box": [
+                    814.9583740234375,
+                    384.8752746582031,
+                    1025.236328125,
+                    552.1957397460938
+                ]
+            }
+        ],
+        "chemicals": [],
+        "others": []
+    },
+    {
+        "containers": [
+            {
+                "category": "Chemical Container",
+                "name": "glass conical flask",
+                "physical_attributes": "Fragile, transparent",
+                "chemical_attributes": "Heat-resistant, corrosion-resistant",
+                "containing": "None",
+                "source": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object4.png",
+                "bounding box": [
+                    319.16619873046875,
+                    426.2579345703125,
+                    523.447998046875,
+                    620.5261840820312
+                ]
+            }
+        ],
+        "chemicals": [],
+        "others": []
+    },
+    {
+        "containers": [
+            {
+                "category": "Chemical Container",
+                "name": "glass beaker",
+                "physical_attributes": "Fragile, transparent",
+                "chemical_attributes": "Heat-resistant, corrosion-resistant",
+                "containing": "None",
+                "source": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object5.png",
+                "bounding box": [
+                    775.742919921875,
+                    0.08374929428100586,
+                    1023.8697509765625,
+                    236.72447204589844
+                ]
+            }
+        ],
+        "chemicals": [],
+        "others": []
+    },
+    {
+        "containers": [
+            {
+                "category": "Chemical Container",
+                "name": "glass tall beaker",
+                "physical_attributes": "Fragile, transparent",
+                "chemical_attributes": "Heat-resistant, corrosion-resistant",
+                "containing": "None",
+                "source": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object6.png",
+                "bounding box": [
+                    214.4359588623047,
+                    179.25979614257812,
+                    430.94976806640625,
+                    361.342529296875
+                ]
+            }
+        ],
+        "chemicals": [],
+        "others": []
+    },
+    {
+        "containers": [
+            {
+                "category": "Chemical Container",
+                "name": "glass tall beaker",
+                "physical_attributes": "Fragile, transparent",
+                "chemical_attributes": "Heat-resistant, corrosion-resistant",
+                "containing": "None",
+                "source": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object7.png",
+                "bounding box": [
+                    480.89666748046875,
+                    -0.004414916038513184,
+                    650.1619873046875,
+                    158.3393096923828
+                ]
+            }
+        ],
+        "chemicals": [],
+        "others": []
+    },
+    {
+        "containers": [
+            {
+                "category": "Chemical Container",
+                "name": "glass graduated cylinder",
+                "physical_attributes": "Fragile, transparent",
+                "chemical_attributes": "Heat-resistant, corrosion-resistant",
+                "containing": "None",
+                "source": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object8.png",
+                "bounding box": [
+                    724.882568359375,
+                    277.2426452636719,
+                    845.1865234375,
+                    352.6643371582031
+                ]
+            },
+            {
+                "category": "Chemical Container",
+                "name": "glass graduated cylinder",
+                "physical_attributes": "Fragile, transparent",
+                "chemical_attributes": "Heat-resistant, corrosion-resistant",
+                "containing": "None",
+                "source": "/home/yan/BestMan_Chemistry_Test_SONG/Perception/Object_detection/Lang_SAM/output_objects/object8.png",
+                "bounding box": [
+                    724.882568359375,
+                    277.2426452636719,
+                    845.1865234375,
+                    352.6643371582031
+                ]
+            }
+        ],
+        "chemicals": [],
+        "others": []
+    }
+]
