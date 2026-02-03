@@ -14,12 +14,12 @@ from franky import Affine
 CONST_POINTS_NUM=640*480
 
 
-def uniform_sample_points(xyzrgb: np.ndarray, M: int):
+def uniform_random_sample_points(xyzrgb: np.ndarray, M: int):
     N = xyzrgb.shape[0]
     if N == 0:
         return np.zeros((M, 6))
     if N >= M:
-        idx = np.linspace(0, N - 1, M).astype(np.int64)
+        idx = np.linspace(0, N - 1, M).astype(np.int64) 
         return xyzrgb[idx]
     else:
         extra = np.random.choice(N, M - N, replace=True)
@@ -43,7 +43,7 @@ def collection_data_update(camera_hand,camera_overhead,bestman,sim_data_collecti
         H_camera_hand_extrinsic = update_cam_extrinsics(bestman,camera_hand.dev_name)
         world_points = ((H_camera_hand_extrinsic[:3,:3]@points.T).T+H_camera_hand_extrinsic[:3,3].T)
         hand_cloud_rgb_var_len = np.hstack((world_points,((colors*255).astype(np.uint8)))) 
-        hand_cloud_rgb = uniform_sample_points(hand_cloud_rgb_var_len,CONST_POINTS_NUM)
+        hand_cloud_rgb = uniform_random_sample_points(hand_cloud_rgb_var_len,CONST_POINTS_NUM)
         # camera_hand.visualize_3d_points()
 
 
@@ -54,7 +54,7 @@ def collection_data_update(camera_hand,camera_overhead,bestman,sim_data_collecti
         H_camera_overhead_extrinsic = update_cam_extrinsics(bestman,camera_overhead.dev_name)
         world_points = ((H_camera_overhead_extrinsic[:3,:3]@points.T).T+H_camera_overhead_extrinsic[:3,3].T)
         overhead_cloud_rgb_var_len = np.hstack((world_points,((colors*255).astype(np.uint8)))) 
-        overhead_cloud_rgb = uniform_sample_points(overhead_cloud_rgb_var_len,CONST_POINTS_NUM)
+        overhead_cloud_rgb = uniform_random_sample_points(overhead_cloud_rgb_var_len,CONST_POINTS_NUM)
         # camera_overhead.visualize_3d_points()
 
 
