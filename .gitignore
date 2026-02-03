@@ -16,6 +16,8 @@ out/
 checkpoint.pt
 *.pt
 *.safetensors
+*.tar
+
 # Python 缓存
 __pycache__/
 *.pyc
