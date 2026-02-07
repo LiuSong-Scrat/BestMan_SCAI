@@ -117,45 +117,6 @@ def update_cam_extrinsics(bestman,camera_name):
 
     return H_camera_extrinsic
 
-def main_mission(camera_hand,camera_overhead, bestman,predictor,model_savg,stage1segmentation):
-    click_camera_name = "overhead"
-    visualize=False
-
-    while True:
-
-        if click_camera_name == "overhead":
-            mouse_get_cam_3d_points = camera_overhead.get_cam_3d_points_from_mouse()
-        elif click_camera_name == "hand":
-            mouse_get_cam_3d_points = camera_hand.get_cam_3d_points_from_mouse()
-        mouse_base_3d_points = get_base_points_from_cam_points(bestman,mouse_get_cam_3d_points,click_camera_name)
-
-        ################# Grasp#################
-        # Move Towards Phase
-        has_cond=False
-        cur_model_observation = get_cur_model_observation(camera_hand,camera_overhead, bestman)
-        target_pose_position,target_pose_orientation_xyzw = savg_inference(model_savg,cur_model_observation,predictor,stage1segmentation,has_cond,visualize=visualize)
-        move_towards_pose = Pose(target_pose_position, target_pose_orientation_xyzw)
-        bestman.move_eef_to_goal_pose(move_towards_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
-        #Interaction Phase
-        standard_quaternion = [0,1,0,0]
-        standard_quaternion_twist = [ 0.7071068, 0.7071068, 0, 0 ]
-        new_red_gripper = 0.01
-        grasp_pose = [mouse_base_3d_points[0]-np.array([0,0,0.02])+np.array([0,0,new_red_gripper]), standard_quaternion] 
-        skill_franka3_database.grasp(bestman, grasp_pose, approaching_dir='top', retracting_dir='top', D_pre=0.05, D_ret=0.05)
-
-
-
-        #################Place#################
-        # Move Towards Phase
-        has_cond=True
-        cur_model_observation = get_cur_model_observation(camera_hand,camera_overhead, bestman)
-        target_pose_position,target_pose_orientation_xyzw = savg_inference(model_savg,cur_model_observation,predictor,stage1segmentation,has_cond,visualize=visualize)
-        move_towards_pose = Pose(target_pose_position, target_pose_orientation_xyzw)
-        bestman.move_eef_to_goal_pose(move_towards_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
-        #Interaction Phase
-        move_pose = [mouse_base_3d_points[1]+np.array([0,0,0.03])+np.array([0,0,new_red_gripper]), standard_quaternion] 
-        skill_franka3_database.place(bestman, move_pose, retracting_dir='top', D_ret=0.05)
-
 def ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage1segmentation,stage2editing,predictor,model_savg,model_va,gripper_open_flag):
     model_va.policy_reset()
 
