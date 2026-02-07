@@ -1,0 +1,157 @@
+# TODO
+# Robot params
+Robot:
+  robot_ip: 192.168.0.1
+  fci_ip: 192.168.1.11
+  username: franka
+  password: franka123
+  arm_home_joint_values: [-0.068755,-0.511863,0.072686,-2.79413,0.0465087,2.28272,-2.39184]    # in degrees
+  frequency: 1000
+  velocity: 0.2
+  acceleration: 0.1
+  jerk: 0.005
+
+  base_init_pose: [1, 0, 0, 0.0, 0.0, "math.pi / 2"]                                            # The initial pose of base and arm
+  base_urdf_path: None                                                                          # base urdf path
+  arm_urdf_path: "Asset/Robot/mobile_manipulator/arm/flexiv/urdf/flexiv_rizon4_robotiq_2f85.urdf"      # arm urdf path
+  arm_num_dofs: 7                                                                               # arm joint index of 6 DOF
+  arm_reset_jointValues: [0, -1.57, 1.5, -1.57, -1.57, 0]                                       # The reset angle of arm joint
+  arm_place_height: 1.03                                                                        # base height (arm place height slightly higher than the base)
+  eef_id: 7                                                                                     # The index of the end effector
+  tcp_link: 12                                                                                  # The index of the tcp link
+  tcp_height: 0.15                                                                              # The height of the tcp link
+  
+# TODO
+# Camera params
+Camera:
+  L515:
+    dev_name: "L515"
+    fov: 69             # Field of View
+    width: 1280          # width
+    height: 720         # height
+    depth_width: 1024
+    depth_height: 768
+    nearVal: 0.1        # Camera near viewing distance
+    farVal: 10          # Camera far viewing distance
+    head_tilt: 0.0
+    min_depth: 0.01      # Minimum depth of point cloud
+    max_depth: 2.0     # Maximum depth of point cloud
+    fps: 30
+
+    # 工作空间裁剪参数
+    xmin: -0.19
+    xmax:  0.12
+    ymin: -0.15
+    ymax:  0.15
+    zmin:  0.0
+    zmax:  1.0
+
+  D435I:
+    dev_name: "D435I"
+    fov: 69             # Field of View
+    width: 640          # width
+    height: 480         # height
+    depth_width: 640
+    depth_height: 480
+    nearVal: 0.1        # Camera near viewing distance
+    farVal: 10          # Camera far viewing distance
+    head_tilt: 0.0
+    min_depth: 0.01      # Minimum depth of point cloud
+    max_depth: 2.0     # Maximum depth of point cloud
+    fps: 30
+
+    # 工作空间裁剪参数
+    xmin: -0.19
+    xmax:  0.12
+    ymin: -0.15
+    ymax:  0.15
+    zmin:  0.0
+    zmax:  1.0
+    
+  init_delay: 3       # Initialization delay time in seconds
+  
+# TODO
+Grasp_Pose_Estimation:
+  AnyGrasp:
+    checkpoint_path: "./checkpoints/checkpoint_detection.tar" # Model checkpoint path
+    max_gripper_width: 0.08  # Maximum gripper width
+    gripper_height: 0.03   # Gripper height
+    debug: True # Enable visualization
+    sampling_rate: 1.0  # Sampling rate of points [<= 1]
+    top_down_grasp: true  # top_down_grasp
+    output_dir: "output/test"
+
+# TODO
+# Ompl planner params
+Planner:
+  # planner: "RRTConnect"       # planner
+  planner: "BITstar"          # planner (The effect seems to be better than RTT)
+  planning_time: 5.0          # Maximum planning time
+  interpolate_num: 50         # The number of linear interpolation insertion points.
+
+
+ 
+
+# DONE
+# SONG MODIFY 0402----You see the objects from a bird's eye view
+  # Instruction:
+  #         You are an AI model trained to analyze images of laboratory equipment and chemical substances. Your task is to extract detailed information from these images and provide a structured JSON output with specific attributes.
+  #         And there is **THE MOST IMPORTANCE** rule: You only chose the name in the following classes from the following list, it should be named as the targeted name in *name*. If not in the list, the *Name* should be named as *unkonw object*
+  #         Here are 3 classes with corresponding *name*:
+  #         '''
+  #           glass tall beaker,
+  #           glass beaker,
+  #           glass conical flask,
+  #           glass graduated cylinder,
+  #           glass container with lid,
+  #           glass 
+  #         '''
+  #         Another important note: Whenever you see a container, be sure to check whether the container has any substance inside, like liquid, pwder, etc. This could be hard to see, so be careful.
+
+  #         Input:
+  #         An image of a laboratory object (equipment or chemical substance). The image is provided as a local file path.  
+  #         The bounding box size.
+
+  #         Expected Output:
+  #         A JSON file with the following structure and details:
+
+  #         For containers (equipment):
+  #         - Category: Always labeled as "Chemical Container" .
+  #         - Name: Identify the name of the container and give the description around 3-4 words (e.g., "graduated cylinder", "volumetric flask").
+  #         - Physical Attributes: Describe relevant physical properties (e.g., "Fragile").
+  #         - Chemical Attributes: Describe relevant chemical properties (e.g., "Heat-resistant", "Corrosion-resistant").
+  #         - Containing: Describe the subatance ("liquid", "powder", etc.) that is being contained in the container. If you think there is nothing in it, this should be exactly "None"
+
+  #         For chemicals (substances):
+  #         - Category: Always labeled as "Chemical Substance".
+  #         - Name: Identify the chemical name and formula (e.g., "Sodium Chloride (NaCl)").
+  #         - Physical Attributes: Describe the physical properties (e.g., "Colorless, crystalline").
+  #         - Chemical Attributes: Describe the chemical properties (e.g., "Soluble in water").
+          
+  #         For others (other objects):
+  #         - Category: Always labeled as "Others".
+  #         - Name: Identify the name of the object and give the description around 3-4 words.
+  #         - Physical Attributes: Describe relevant physical properties (e.g., "Fragile").
+  #         - Chemical Attributes: Describe relevant chemical properties (e.g., "Heat-resistant", "Corrosion-resistant").
+
+  #         Examples:
+  #         Input Image: (Here is one RGB image)
+  #         Output JSON:
+  #         {
+  #             "containers": [
+  #                 {
+  #                     "category": "Chemical Container",
+  #                     "name": "glass tall beaker",
+  #                     "physical_attributes": "Fragile",
+  #                     "chemical_attributes": "Heat-resistant",
+  #                     "containing": "None"
+  #                 }
+  #             ],
+  #             "chemicals": [],
+  #             "others": []
+  #         }
+  #         Additional Attentions:
+  #         You see the objects from a bird's eye view
+  #         Ensure precision in physical and chemical property identification.
+  #         Use visual cues from the image (e.g., markings, material texture, or labels) to infer attributes.
+  #         Maintain consistent formatting and accuracy for all dimensions, poses, and properties.

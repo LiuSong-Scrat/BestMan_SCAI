@@ -60,7 +60,7 @@ class RealDataCollection:
         #wait for the producer starts
         while self.episode_finish is not True:
             while self.overhead_frame is None or self.hand_frame is None or  self.cur_pos is None:
-                    time.sleep(0.1)
+                    time.sleep(0.02)
             with self.buffer_lock:
                 if self.overhead_frame is None or self.hand_frame is None or  self.cur_pos is None:
                     continue
@@ -75,9 +75,9 @@ class RealDataCollection:
                 for idx, value in enumerate(self.cur_pos):
                     trajectory_unit_data[trajectory_unit_data_keys_list[idx]] = value
                 self.trajectory_list.append(trajectory_unit_data)
-                time.sleep(0.1)
                 self.frame_id+=1
 
+                self.overhead_frame = None #Avoid Repeated Frame
                 
                 if self.episode_finish is True:
                     self.collection_finish =  True

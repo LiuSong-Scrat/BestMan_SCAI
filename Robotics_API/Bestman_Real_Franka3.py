@@ -94,7 +94,7 @@ class Bestman_Real_Franka3:
             print(f"Reaction fired at {abs_time}.")
         reaction.register_callback(reaction_callback)
 
-    def move_eef_to_goal_pose(self, goal_pose, maxLinearVel=0.3, maxAngularVel=1):
+    def move_eef_to_goal_pose(self, goal_pose, maxLinearVel=0.3, maxAngularVel=1,asynchronous=False):
         """
         Moves the end effector to the specified pose.
         Args:
@@ -116,7 +116,9 @@ class Bestman_Real_Franka3:
         combined_transformation = Affine(position,orientation)       # flexiv require (qw,qx,qy,qz)
         execute_motion = CartesianMotion(combined_transformation)
         self.motion_move_safety_ensure(execute_motion)
-        self.robot.move(execute_motion)
+        self.robot.move(execute_motion,asynchronous=asynchronous)
+        
+
 
 
     def get_current_eef_pose(self):

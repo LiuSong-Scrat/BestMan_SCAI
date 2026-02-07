@@ -18,6 +18,7 @@ if bestman.initialize_robot() is not True:
 
 print(bestman.robot.current_cartesian_state)
 print(bestman.robot.current_joint_state)
+print("Gripper: ",bestman.gripper.width) #0.08-0.00
 
 
 bestman.release_robot()

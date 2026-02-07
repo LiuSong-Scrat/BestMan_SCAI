@@ -66,7 +66,7 @@ def collection_data_update(camera_hand,camera_overhead,bestman,sim_data_collecti
         sim_data_collection.hand_frame = img_hand_rgb 
         sim_data_collection.overhead_frame = img_overhead_rgb #-----------temp_use
         sim_data_collection.eff_angular = np.array([gripper_width]) #xyz/xyzw
-        time.sleep(0.05)
+        time.sleep(0.02)
 def get_base_points_from_cam_points(bestman,mouse_get_cam_3d_points,camera_name):
     base_3d_points = []
     for cam_obj_translation in mouse_get_cam_3d_points:
@@ -181,15 +181,40 @@ for i in range(50):
     collect_data_thread.start()
     #----------------------TASK EXECUTION----------------------# 
     #Grasp Pose
-    standard_quaternion = [0,1,0,0]
+    standard_quaternion = [0.442212, 0.896865, 0.00592168, 0.00684362] #[0,1,0,0]
     standard_quaternion_twist = [ 0.7071068, 0.7071068, 0, 0 ]
-    new_red_gripper = 0.08
-    grasp_pose = [mouse_base_3d_points[0]-np.array([0,0,0.02])+np.array([0,0,new_red_gripper]), standard_quaternion] 
-    skill_franka3_database.grasp(bestman, grasp_pose, approaching_dir='top', retracting_dir='top', D_pre=0.15, D_ret=0.15)
+    new_red_gripper = 0.01
 
-    #Place Pose
-    move_pose = [mouse_base_3d_points[1]+np.array([0,0,0.04])+np.array([0,0,new_red_gripper]), standard_quaternion] 
-    skill_franka3_database.place(bestman, move_pose, retracting_dir='top', D_ret=0.10)
+    while True:
+        try:
+            grasp_pose = [mouse_base_3d_points[0]-np.array([0,0,0.02])+np.array([0,0,new_red_gripper]), standard_quaternion] 
+            skill_franka3_database.grasp(bestman, grasp_pose, approaching_dir='top', retracting_dir='top', D_pre=0.05, D_ret=0.05)
+            print("SUCCESS------------------")
+            break
+        except Exception as e:
+            bestman.robot.recover_from_errors() 
+            print("ERROR------------------")
+            time.sleep(0.1)
+
+    while True:
+        try:
+            move_pose = [mouse_base_3d_points[1]+np.array([0,0,0.03])+np.array([0,0,new_red_gripper]), standard_quaternion] 
+            skill_franka3_database.place(bestman, move_pose, retracting_dir='top', D_ret=0.05)
+            print("SUCCESS------------------")
+            break
+        except Exception as e:
+            bestman.robot.recover_from_errors() 
+            print("ERROR------------------")
+            time.sleep(0.1)
+    
+    
+    #Grasp Pose
+    # grasp_pose = [mouse_base_3d_points[0]-np.array([0,0,0.02])+np.array([0,0,new_red_gripper]), standard_quaternion] 
+    # skill_franka3_database.grasp(bestman, grasp_pose, approaching_dir='top', retracting_dir='top', D_pre=0.05, D_ret=0.05)
+
+    # #Place Pose
+    # move_pose = [mouse_base_3d_points[1]+np.array([0,0,0.03])+np.array([0,0,new_red_gripper]), standard_quaternion] 
+    # skill_franka3_database.place(bestman, move_pose, retracting_dir='top', D_ret=0.05)
 
     #2.Consumer Save & Restart
     sim_data_collection.episode_finish=True 

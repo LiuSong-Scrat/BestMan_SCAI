@@ -87,7 +87,7 @@ def update_cam_extrinsics(bestman,camera_name):
 
     return H_camera_extrinsic
 
-def main_mission(camera_hand,camera_overhead, bestman,predictor,model_savg,stagegen_stage1):
+def main_mission(camera_hand,camera_overhead, bestman,predictor,model_savg,stage1segmentation):
     click_camera_name = "overhead"
     visualize=False
 
@@ -103,7 +103,7 @@ def main_mission(camera_hand,camera_overhead, bestman,predictor,model_savg,stage
         # Move Towards Phase
         has_cond=False
         cur_model_observation = get_cur_model_observation(camera_hand,camera_overhead, bestman)
-        target_pose_position,target_pose_orientation_xyzw = savg_inference(model_savg,cur_model_observation,predictor,stagegen_stage1,has_cond,visualize=visualize)
+        target_pose_position,target_pose_orientation_xyzw = savg_inference(model_savg,cur_model_observation,predictor,stage1segmentation,has_cond,visualize=visualize)
         move_towards_pose = Pose(target_pose_position, target_pose_orientation_xyzw)
         bestman.move_eef_to_goal_pose(move_towards_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
         #Interaction Phase
@@ -118,41 +118,39 @@ def main_mission(camera_hand,camera_overhead, bestman,predictor,model_savg,stage
         # Move Towards Phase
         has_cond=True
         cur_model_observation = get_cur_model_observation(camera_hand,camera_overhead, bestman)
-        target_pose_position,target_pose_orientation_xyzw = savg_inference(model_savg,cur_model_observation,predictor,stagegen_stage1,has_cond,visualize=visualize)
+        target_pose_position,target_pose_orientation_xyzw = savg_inference(model_savg,cur_model_observation,predictor,stage1segmentation,has_cond,visualize=visualize)
         move_towards_pose = Pose(target_pose_position, target_pose_orientation_xyzw)
         bestman.move_eef_to_goal_pose(move_towards_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
         #Interaction Phase
         move_pose = [mouse_base_3d_points[1]+np.array([0,0,0.04])+np.array([0,0,new_red_gripper]), standard_quaternion] 
         skill_franka3_database.place(bestman, move_pose, retracting_dir='top', D_ret=0.10)
 
-def mission_execution(camera_hand,camera_overhead, bestman,stagegen_stage1, mouse_base_3d_points,predictor,model_savg):
+def mission_execution(camera_hand,camera_overhead, bestman,stage1segmentation, mouse_base_3d_points,predictor,model_savg):
 
     ################# Grasp#################
     # Move Towards Phase
     has_cond=False
     visualize=True
     cur_model_observation = get_cur_model_observation(camera_hand,camera_overhead, bestman)
-    target_pose_position,target_pose_orientation_xyzw = savg_inference(model_savg,cur_model_observation,predictor,stagegen_stage1,has_cond,visualize=visualize)
+    target_pose_position,target_pose_orientation_xyzw = savg_inference(model_savg,cur_model_observation,predictor,stage1segmentation,has_cond,visualize=visualize)
     move_towards_pose = Pose(target_pose_position, target_pose_orientation_xyzw)
     bestman.move_eef_to_goal_pose(move_towards_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
     #Interaction Phase
-    standard_quaternion = [0,1,0,0]
-    standard_quaternion_twist = [ 0.7071068, 0.7071068, 0, 0 ]
-    new_red_gripper = 0.09
+    new_red_gripper = 0.01
     grasp_pose = [mouse_base_3d_points[0]-np.array([0,0,0.02])+np.array([0,0,new_red_gripper]), target_pose_orientation_xyzw] 
-    skill_franka3_database.grasp(bestman, grasp_pose, approaching_dir='top', retracting_dir='top', D_pre=0.15, D_ret=0.15)
+    skill_franka3_database.grasp(bestman, grasp_pose, approaching_dir='top', retracting_dir='top', D_pre=0.05, D_ret=0.05)
 
 
     #################Place#################
     # Move Towards Phase
     has_cond=True
     cur_model_observation = get_cur_model_observation(camera_hand,camera_overhead, bestman)
-    target_pose_position,target_pose_orientation_xyzw = savg_inference(model_savg,cur_model_observation,predictor,stagegen_stage1,has_cond,visualize=visualize)
+    target_pose_position,target_pose_orientation_xyzw = savg_inference(model_savg,cur_model_observation,predictor,stage1segmentation,has_cond,visualize=visualize)
     move_towards_pose = Pose(target_pose_position, target_pose_orientation_xyzw)
     bestman.move_eef_to_goal_pose(move_towards_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
     #Interaction Phase
-    move_pose = [mouse_base_3d_points[1]+np.array([0,0,0.04])+np.array([0,0,new_red_gripper]), target_pose_orientation_xyzw] 
-    skill_franka3_database.place(bestman, move_pose, retracting_dir='top', D_ret=0.10)
+    move_pose = [mouse_base_3d_points[1]+np.array([0,0,0.03])+np.array([0,0,new_red_gripper]), target_pose_orientation_xyzw] 
+    skill_franka3_database.place(bestman, move_pose, retracting_dir='top', D_ret=0.05)
 
 
 
@@ -274,7 +272,7 @@ def get_base_points_from_cam_points(bestman,mouse_get_cam_3d_points,camera_name)
     return base_3d_points
 
 
-def savg_inference(model_savg,cur_model_observation,predictor,stagegen_stage1,has_cond,visualize):
+def savg_inference(model_savg,cur_model_observation,predictor,stage1segmentation,has_cond,visualize):
     # Objects Segmentation 
     obj_sets = ["yellow_mug","blue_cube"]  
     img_overhead_rgb = cur_model_observation['overhead']
@@ -284,7 +282,7 @@ def savg_inference(model_savg,cur_model_observation,predictor,stagegen_stage1,ha
     obj_seg_dict={}
     overhead_cloud_rgb = cur_model_observation['point_cloud']
     scene_pcd = GeometryUtils.cloud_rgb_to_pcd(overhead_cloud_rgb)
-    camera_intrics, H_world2image = stagegen_stage1.setup_camera_transforms()
+    camera_intrics, H_world2image = stage1segmentation.setup_camera_transforms()
     for obj_str, obj_mask in obj_masks.items():
         obj_seg_pcd = ProjectionUtils.get_seg_pcd(scene_pcd, H_world2image, camera_intrics, obj_mask)
         obj_seg_cloud_rgb = np.hstack((np.array(obj_seg_pcd.points), 
@@ -376,15 +374,15 @@ if USE_SAM2:
     # First annotation
     ann_obj_id = 1  # give a unique id to each object we interact with (it can be any integers)
     ##! add points, `1` means positive click and `0` means negative click
-    points = np.array([[456, 314],[457,328],[459,357],[451,332]], dtype=np.float32)
-    labels = np.array([1,1,1,1], dtype=np.int32)
+    points = np.array([[338, 339],[344,346],[344,360]], dtype=np.float32)
+    labels = np.array([1,1,1], dtype=np.int32)
     _, out_obj_ids, out_mask_logits = predictor.add_new_prompt(
         frame_idx=ann_frame_idx, obj_id=ann_obj_id, points=points, labels=labels
     )
 
     ann_obj_id = 2  # give a unique id to each object we interact with (it can be any integers)
-    points = np.array([[302, 351],[296,400]], dtype=np.float32)
-    labels = np.array([1,1], dtype=np.int32)
+    points = np.array([[433, 393],[437,402],[440,414]], dtype=np.float32)
+    labels = np.array([1,1,1], dtype=np.int32)
     _, out_obj_ids, out_mask_logits = predictor.add_new_prompt(
         frame_idx=ann_frame_idx, obj_id=ann_obj_id, points=points, labels=labels
     )
@@ -397,7 +395,7 @@ if USE_SAM2:
 stagegen_task_name = "real_task_simple"
 stagegen_config_file = f"/home/liusong/ProgramFiles/REAP/StageGen/config/{stagegen_task_name}.yaml"
 stagegen_src_hdf5_path = f"/home/liusong/ProgramFiles/REAP/StageGen/source/{stagegen_task_name}.hdf5"
-stagegen_stage1 = Stage1Segmentation(stagegen_config_file, stagegen_src_hdf5_path)
+stage1segmentation = Stage1Segmentation(stagegen_config_file, stagegen_src_hdf5_path)
 
 
 
@@ -471,7 +469,7 @@ while True:
         #Window Overview
         mission_execution_thread = threading.Thread(
             target=mission_execution,
-            args=(camera_hand,camera_overhead, bestman,stagegen_stage1, mouse_base_3d_points,predictor,model_savg))
+            args=(camera_hand,camera_overhead, bestman,stage1segmentation, mouse_base_3d_points,predictor,model_savg))
         mission_execution_thread.start()
         mission_execution_flag = False
 
