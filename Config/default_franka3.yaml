@@ -155,3 +155,60 @@ Planner:
   #         Ensure precision in physical and chemical property identification.
   #         Use visual cues from the image (e.g., markings, material texture, or labels) to infer attributes.
   #         Maintain consistent formatting and accuracy for all dimensions, poses, and properties.
+LLM:
+  azure_endpoint: "https://gpt4o2025.openai.azure.com/"
+  api_key: "API_KEY"
+  api_version: "2024-10-21"
+  temperature: 0.5
+  #model: gpt-4o
+  model: qwen2.5-vl-32b-instruct
+  
+  max_tokens: 1000
+  save_path: "../Dataset/objects_json.json"
+  dataset_prompts:
+    image_analysis: |
+      Input Image: (Here is one RGB image)
+      Just Output the same content as a JSON type:
+      {
+          "containers": [
+              {
+                  "category": "Chemical Container",
+                  "name": "glass tall beaker",
+                  "physical_attributes": "Fragile",
+                  "chemical_attributes": "Heat-resistant",
+                  "containing": "None"
+              }
+          ],
+          "chemicals": [],
+          "others": []
+      }
+    text_analysis: |
+      Instruction:
+          You are an AI model trained to provide accurate and helpful responses to user text prompts. Your goal is to understand and analyze the provided text and respond appropriately.
+          Input:
+          A text prompt provided by the user.
+          Expected Output:
+          accurate response tailored to the user's query, ensuring completeness and precision.
+
+Manipulation:
+
+  general:
+    position_tolerance: 0.002
+    orienration_tolerance: 0.5
+    joint_position_tolerance: 0.05
+    joint_low_speed_threshold: 0.7
+    collision_threshold_force: 40.0
+    collision_threshold_torque: 5.0
+    cartesian_stiffness: [10000.0, 10000.0, 10000.0, 1000.0, 1000.0, 1000.0]
+    force_control_reference: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    maximum_contact_wrench: [20.0, 20.0, 20.0, 1.5, 1.5, 1.5]
+    timeout: 10
+
+  place_object:
+    timeout: 10
+    bottom_detect_threshold: 10 #Default 8
+
+  base_level_visual_calibration_parameters: [-5940.71562714, 6944.55906822, -3049.99983405, 683.98157801]
+  T_camera_in_eef: [[-1.0, 0.0, 0.0, 0.025],[0.0, -1.0, 0.0, 0.128],[0.0, 0.0, 1.0, -0.195],[0.0, 0.0, 0.0, 1.000]] #x add down move --- y add left move
+  # T_camera_in_eef: [[-1.0, 0.0, 0.0, 0.035],[0.0, -1.0, 0.0, 0.137],[0.0, 0.0, 1.0, -0.195],[0.0, 0.0, 0.0, 1.000]] # SRC Default 
+  # T_camera_in_eef: [[-1.0, 0.0, 0.0, 0.025],[0.0, -1.0, 0.0, 0.112],[0.0, 0.0, 1.0, -0.195],[0.0, 0.0, 0.0, 1.000]] #  #BROWN

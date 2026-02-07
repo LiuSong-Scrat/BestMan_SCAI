@@ -630,7 +630,7 @@ if USE_SAM2:
     frame = cv2.imread("/home/liusong/ProgramFiles/BestMan/Dataset/Images/cube_stak.png")
     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     width, height = frame.shape[:2][::-1]
-    # cv2.imshow("overhead_frame", frame)
+    # cv2.imshow("overhead_frame", cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
     # cv2.waitKey(0)
     predictor.load_first_frame(frame)
     if_init = True
@@ -638,14 +638,14 @@ if USE_SAM2:
     # First annotation
     ann_obj_id = 1  # give a unique id to each object we interact with (it can be any integers)
     ##! add points, `1` means positive click and `0` means negative click
-    points = np.array([[338, 339],[344,346],[344,360]], dtype=np.float32)
+    points = np.array([[327, 310],[337,323],[332,334]], dtype=np.float32)
     labels = np.array([1,1,1], dtype=np.int32)
     _, out_obj_ids, out_mask_logits = predictor.add_new_prompt(
         frame_idx=ann_frame_idx, obj_id=ann_obj_id, points=points, labels=labels
     )
 
     ann_obj_id = 2  # give a unique id to each object we interact with (it can be any integers)
-    points = np.array([[433, 393],[437,402],[440,414]], dtype=np.float32)
+    points = np.array([[441, 308],[454,321],[447,335]], dtype=np.float32)
     labels = np.array([1,1,1], dtype=np.int32)
     _, out_obj_ids, out_mask_logits = predictor.add_new_prompt(
         frame_idx=ann_frame_idx, obj_id=ann_obj_id, points=points, labels=labels
