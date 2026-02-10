@@ -181,7 +181,7 @@ for i in range(50):
     collect_data_thread.start()
     #----------------------TASK EXECUTION----------------------# 
     #Grasp Pose
-    standard_quaternion = [0.442212, 0.896865, 0.00592168, 0.00684362] #[0,1,0,0]
+    standard_quaternion = [0.442212, 0.896865, 0.00592168, 0.00684362] # #[0.442212, 0.896865, 0.00592168, 0.00684362] #[0,1,0,0]
     standard_quaternion_twist = [ 0.7071068, 0.7071068, 0, 0 ]
     new_red_gripper = 0.01
 
@@ -197,8 +197,32 @@ for i in range(50):
             time.sleep(0.1)
 
     while True:
+        import math
+        def quat_to_yaw(quaternion):
+            """
+            从四元数 (x, y, z, w) 计算 yaw 角度（绕 Z 轴）
+            返回值：弧度 [-π, π]
+            """
+            x,y,z,w = quaternion
+            sinr_cosp = 2.0 * (w * z + x * y)
+            cosr_cosp = 1.0 - 2.0 * (y * y + z * z)
+            yaw = math.atan2(sinr_cosp, cosr_cosp)
+            return yaw
+        move_pose = [mouse_base_3d_points[1]+np.array([0,0,0.03])+np.array([0,0,new_red_gripper]), standard_quaternion] 
+        D_pre = 0.05
+        place_position = move_pose[0]
+        place_orientation = move_pose[1]
+        yaw = quat_to_yaw(place_orientation)
+        c = abs(math.cos(yaw))
+        s = abs(math.sin(yaw))
+        X,Y,Z = place_position
+        preparation_position = [X - np.sign(X) * D_pre * c, 
+                                Y + np.sign(Y) * D_pre * s, 
+                                Z]
         try:
-            move_pose = [mouse_base_3d_points[1]+np.array([0,0,0.03])+np.array([0,0,new_red_gripper]), standard_quaternion] 
+            preparation_pose = Pose(preparation_position, place_orientation)
+            bestman.move_eef_to_goal_pose(preparation_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
+
             skill_franka3_database.place(bestman, move_pose, retracting_dir='top', D_ret=0.05)
             print("SUCCESS------------------")
             break

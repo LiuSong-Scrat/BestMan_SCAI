@@ -28,7 +28,7 @@ class Bestman_Real_Franka3:
             self.robot_web_session.open()
             try:
                 print("Start Try to Control the Robot")
-                self.robot_web_session.take_control(wait_timeout=3.0)
+                self.robot_web_session.take_control(wait_timeout=0.1)
             except TakeControlTimeoutError:
                 print("Start Force to Control the Robot, Please Press the button")
                 self.robot_web_session.take_control(wait_timeout=30.0, force=True)

@@ -194,7 +194,16 @@ def ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage1segme
         target_pose_position =np.array(inference_action[:3])
 
         move_towards_pose = Pose(target_pose_position, target_pose_orientation_xyzw)
-        bestman.move_eef_to_goal_pose(move_towards_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45),asynchronous=False)
+
+        while True:
+            try:
+                bestman.move_eef_to_goal_pose(move_towards_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45),asynchronous=False)
+                print("SUCCESS------------------")
+                break
+            except Exception as e:
+                bestman.robot.recover_from_errors() 
+                print("ERROR------------------")
+                time.sleep(0.1)
 
         # ###################Gripper CONTROAL#############
         # inference_gripper_width=inference_action[-1]*2 #recover the normal scale
@@ -211,6 +220,17 @@ def ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage1segme
             gripper_open_flag = 0
             return gripper_open_flag
 
+        if sys.stdin in select.select([sys.stdin], [], [], 0)[0]:
+            line = sys.stdin.readline()
+            pressed_key = line.strip()
+            if line:
+                print(f"You pressed: {pressed_key}")
+            if pressed_key == 'o':
+                print("Open.................")
+                bestman.open_gripper()
+                gripper_open_flag = 0
+                return gripper_open_flag
+ 
 
 def mission_execution(camera_hand,camera_overhead, bestman,stage1segmentation,stage2editing,predictor,model_savg,model_va):
 
@@ -237,7 +257,16 @@ def mission_execution(camera_hand,camera_overhead, bestman,stage1segmentation,st
     cur_model_observation = get_cur_model_observation(camera_hand,camera_overhead, bestman)
     target_pose_position,target_pose_orientation_xyzw = savg_inference(model_savg,cur_model_observation,predictor,stage1segmentation,has_cond,visualize=visualize)
     move_towards_pose = Pose(target_pose_position, target_pose_orientation_xyzw)
-    bestman.move_eef_to_goal_pose(move_towards_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
+    while True:
+        try:
+            bestman.move_eef_to_goal_pose(move_towards_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
+            print("SUCCESS------------------")
+            break
+        except Exception as e:
+            bestman.robot.recover_from_errors() 
+            print("ERROR------------------")
+            time.sleep(0.1)
+
     #Interaction Phase
     gripper_open_flag = ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage1segmentation,stage2editing,predictor,model_savg,model_va,gripper_open_flag)
 
@@ -532,7 +561,7 @@ def savg_inference(model_savg,cur_model_observation,predictor,stage1segmentation
             approaching_raw = cur_eff_trajectory # NO USE
             if has_cond:
                 H_pr = np.eye(4)
-                for i in range(3):
+                for i in range(2):
                     H_pr_slice,target_raw,cond_raw,approaching_raw,cond_name = single_data_inference(model_savg,target_raw,cond_raw,approaching_raw,cond_name,visualize=visualize)
                     H_pr = H_pr_slice@H_pr
             if has_cond != True:
@@ -736,6 +765,7 @@ while True:
         if pressed_key == 'n':
             mission_execution_flag = True
 
+            
         if pressed_key == 'q':
             print("Program Over!")
             break
