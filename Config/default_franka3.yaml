@@ -7,7 +7,7 @@ Robot:
   password: franka123
   arm_home_joint_values: [-0.068755,-0.511863,0.072686,-2.79413,0.0465087,2.28272,-2.39184]    # in degrees
   frequency: 1000
-  velocity: 0.2
+  velocity: 0.25
   acceleration: 0.1
   jerk: 0.005
 
@@ -68,7 +68,7 @@ Camera:
     zmin:  0.0
     zmax:  1.0
     
-  init_delay: 3       # Initialization delay time in seconds
+  init_delay: 4       # Initialization delay time in seconds
   
 # TODO
 Grasp_Pose_Estimation:

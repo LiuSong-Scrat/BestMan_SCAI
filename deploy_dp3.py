@@ -125,7 +125,7 @@ def mission_execution(camera_hand,camera_overhead, bestman,stage1segmentation,st
 
     while True:
         
-        model_va.policy.n_action_steps=8
+        model_va.policy.n_action_steps=16
         if  len(model_va.predict_action_queue)<model_va.policy.horizon-model_va.policy.n_action_steps+2:
             cur_model_observation = get_cur_model_observation(camera_hand,camera_overhead, bestman)
 
@@ -134,7 +134,7 @@ def mission_execution(camera_hand,camera_overhead, bestman,stage1segmentation,st
             # 添加夹爪点云
             eff_pose_zyx_eular = cur_model_observation['pose_eular']
             eff_gripper_width = cur_model_observation['gripper_width']
-            normalize_eff_angular = 0 if eff_gripper_width<0.01 else 1
+            normalize_eff_angular = 0 if eff_gripper_width<0.03 else 1
             gripper_mesh = VisualizationUtils.update_gripper(normalize_eff_angular, eff_pose_zyx_eular, gripper_len = 0.06)
             gripper_pcd = gripper_mesh.sample_points_uniformly(number_of_points=500)
             gripper_cloud_rgb = GeometryUtils.pcd_to_cloud_rgb(gripper_pcd)
@@ -633,7 +633,7 @@ PRETRAINED_CKPT_PATH = "/home/liusong/ProgramFiles/REAP/SAVG/out/checkpoints/las
 model_savg = PoseACTCVAE(
     pc_in_dim=6,
     pc_dim=256,
-    pc_grid_size=0.0002,
+    pc_grid_size=0.005,
     pc_tokens=512,
     geo_k=256,
     model_dim=256,
@@ -645,6 +645,7 @@ model_savg = PoseACTCVAE(
     dropout=0.1,
     pre_norm=True,
 ).to(DEVICE)
+
 ckpt = torch.load(PRETRAINED_CKPT_PATH)
 model_savg.load_state_dict(ckpt["model"])
 model_savg.eval()

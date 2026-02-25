@@ -3,6 +3,7 @@ import torch
 import numpy as np 
 import cv2
 import copy
+from PIL import Image
 
 sys.path.append("/home/liusong/ProgramFiles/Huggingface/lerobot/lerobot/")
 from record_song import SmolVLA_ModelInference,ACT_ModelInference,DP_ModelInference
@@ -121,46 +122,12 @@ def ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage1segme
     model_va.policy_reset()
 
     while True:
-        model_va.policy.n_action_steps=26
+        model_va.policy.n_action_steps=16
         if  len(model_va.predict_action_queue)<model_va.policy.horizon-model_va.policy.n_action_steps+2:
             cur_model_observation = get_cur_model_observation(camera_hand,camera_overhead, bestman)
             
             
-            ###################CLOUD_RGB EXTRACT#############
-            
-            
-            # Scene CloudRgb 
-            masked_scene_cloud_rgb = []
-            
-            # 添加夹爪点云
-            eff_pose_zyx_eular = cur_model_observation['pose_eular']
-            eff_gripper_width = cur_model_observation['gripper_width']
-            normalize_eff_angular = 0 if eff_gripper_width<0.04 else 1 
-            gripper_mesh = VisualizationUtils.update_gripper(normalize_eff_angular, eff_pose_zyx_eular, gripper_len = 0.06)
-            gripper_pcd = gripper_mesh.sample_points_uniformly(number_of_points=500)
-            gripper_cloud_rgb = GeometryUtils.pcd_to_cloud_rgb(gripper_pcd)
-            # ADD CloudRgb to Scene
-            masked_scene_cloud_rgb.append(gripper_cloud_rgb)
-
-
-            # WORKSPACE DOWNSAMPLE
-            overhead_cloud_rgb = cur_model_observation['point_cloud']
-            overhead_cloud_rgb_workspace = point_cloud_filter(overhead_cloud_rgb)  
-            # Objects Segmentation 
-            obj_sets = ["yellow_mug","blue_cube"]  
-            img_overhead_rgb = cur_model_observation['overhead']
-            obj_masks = get_sam2_obj_masks_fast(predictor,img_overhead_rgb,obj_sets)
-            # Objects CloudRgb Extracted 
-            scene_pcd = GeometryUtils.cloud_rgb_to_pcd(overhead_cloud_rgb_workspace)
-            camera_intrics, H_world2image = stage1segmentation.setup_camera_transforms()
-            for obj_str, obj_mask in obj_masks.items():
-                obj_seg_pcd = ProjectionUtils.get_seg_pcd(scene_pcd, H_world2image, camera_intrics, obj_mask)
-                obj_seg_cloud_rgb = np.hstack((np.array(obj_seg_pcd.points), 
-                                                np.array(255 * np.array(obj_seg_pcd.colors)).astype(np.uint8)))
-                # ADD CloudRgb to Scene
-                masked_scene_cloud_rgb.append(obj_seg_cloud_rgb)
-            # Convert Scene CloudRgb to Numpy
-            masked_scene_cloud_rgb = np.vstack(masked_scene_cloud_rgb)
+            masked_scene_cloud_rgb = get_scene_point_cloud(cur_model_observation,stage1segmentation)
 
             # Align with Collection
             overhead_cloud_rgb_filter = GeometryUtils.random_repeat_sample_points(masked_scene_cloud_rgb,48*64)
@@ -176,7 +143,7 @@ def ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage1segme
             cur_observation_key_list = list(cur_model_observation.keys())
             for idx in range(len(cur_model_observation['pose_eular'])):
                 cur_model_observation[cur_observation_key_list[idx]] =cur_model_observation['pose_eular'][idx]
-            cur_model_observation['joint_7'] = eff_gripper_width
+            cur_model_observation['joint_7'] = cur_model_observation['gripper_width']
 
 
 
@@ -186,10 +153,8 @@ def ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage1segme
             continue
         
         
-        # Image Visualize
-        overhead_pcd_filter = GeometryUtils.cloud_rgb_to_pcd(overhead_cloud_rgb_filter)
-        depth, rgb = ProjectionUtils.project_pcd_to_image_depth(overhead_pcd_filter, H_world2image, camera_intrics, (480, 640))
-        cv2.imwrite("/home/liusong/temp/temp.png",rgb)
+        frame_rgb = stage2editing.generate_cloud_rgb_to_image(overhead_cloud_rgb_filter)
+        cv2.imwrite("/home/liusong/temp/temp.png",frame_rgb)
 
         ###################POSE CONTROAL#############
         target_pose_eular_zyx=np.array(inference_action[3:6])
@@ -236,62 +201,117 @@ def ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage1segme
                 return gripper_open_flag
  
 
-def mission_execution(camera_hand,camera_overhead, bestman,stage1segmentation,stage2editing,predictor,model_savg,model_va):
-
-    gripper_open_flag = 0 
-
-
-    ################# Grasp#################
-    # Move Towards Phase
-    has_cond=False
-    visualize=False
-    cur_model_observation = get_cur_model_observation(camera_hand,camera_overhead, bestman)
-    target_pose_position,target_pose_orientation_xyzw = savg_inference(model_savg,cur_model_observation,predictor,stage1segmentation,has_cond,visualize=visualize)
-    move_towards_pose = Pose(target_pose_position, target_pose_orientation_xyzw)
-    while True:
-        try:
-            bestman.move_eef_to_goal_pose(move_towards_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
-            print("SUCCESS------------------")
-            break
-        except Exception as e:
-            bestman.robot.recover_from_errors() 
-            print("ERROR------------------")
-            time.sleep(0.1)
-
-    #Interaction Phase
-    gripper_open_flag = ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage1segmentation,stage2editing,predictor,model_savg,model_va,gripper_open_flag)
+def get_scene_point_cloud(cur_model_observation,stage1segmentation):
+        # Scene CloudRgb 
+    masked_scene_cloud_rgb = []
     
-    # Lift Up 5cm
-    cur_eff_pose = bestman.get_current_eef_pose()
-    move_towards_pose = Pose(cur_eff_pose.position+np.array([0,0,0.05]), cur_eff_pose.orientation)
-    bestman.move_eef_to_goal_pose(move_towards_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
+    # 添加夹爪点云
+    eff_pose_zyx_eular = cur_model_observation['pose_eular']
+    eff_gripper_width = cur_model_observation['gripper_width']
+    normalize_eff_angular = 0 if eff_gripper_width<0.04 else 1 
+    gripper_mesh = VisualizationUtils.update_gripper(normalize_eff_angular, eff_pose_zyx_eular, gripper_len = 0.06)
+    gripper_pcd = gripper_mesh.sample_points_uniformly(number_of_points=500)
+    gripper_cloud_rgb = GeometryUtils.pcd_to_cloud_rgb(gripper_pcd)
+    # ADD CloudRgb to Scene
+    masked_scene_cloud_rgb.append(gripper_cloud_rgb)
+
+    # WORKSPACE DOWNSAMPLE
+    overhead_cloud_rgb = cur_model_observation['point_cloud']
+    overhead_cloud_rgb_workspace = point_cloud_filter(overhead_cloud_rgb)  
+    # Objects Segmentation 
+    obj_sets = ["yellow_mug","blue_cube"]  
+    img_overhead_rgb = cur_model_observation['overhead']
+    obj_masks = get_sam2_obj_masks_fast(predictor,img_overhead_rgb,obj_sets)
+    # Objects CloudRgb Extracted 
+    scene_pcd = GeometryUtils.cloud_rgb_to_pcd(overhead_cloud_rgb_workspace)
+    camera_intrics, H_world2image = stage1segmentation.setup_camera_transforms()
+    for obj_str, obj_mask in obj_masks.items():
+        obj_seg_pcd = ProjectionUtils.get_seg_pcd(scene_pcd, H_world2image, camera_intrics, obj_mask)
+        obj_seg_cloud_rgb = np.hstack((np.array(obj_seg_pcd.points), 
+                                        np.array(255 * np.array(obj_seg_pcd.colors)).astype(np.uint8)))
+        # ADD CloudRgb to Scene
+        masked_scene_cloud_rgb.append(obj_seg_cloud_rgb)
+    # Convert Scene CloudRgb to Numpy
+    masked_scene_cloud_rgb = np.vstack(masked_scene_cloud_rgb)
+
+    # Align with Collection
+    overhead_cloud_rgb_filter = GeometryUtils.random_repeat_sample_points(masked_scene_cloud_rgb,48*64)
+    return overhead_cloud_rgb_filter
+
+def mission_execution(camera_hand,camera_overhead, bestman,stage1segmentation,stage2editing,predictor,model_savg,model_va,model_sp):
 
 
-
- 
-    #################Place#################
-    # Move Towards Phase
-    has_cond=True
-    cur_model_observation = get_cur_model_observation(camera_hand,camera_overhead, bestman)
-    target_pose_position,target_pose_orientation_xyzw = savg_inference(model_savg,cur_model_observation,predictor,stage1segmentation,has_cond,visualize=visualize)
-    move_towards_pose = Pose(target_pose_position, target_pose_orientation_xyzw)
+    visualize=True
+    obj_states = {"cup_pos":["hand","cube","else"]}
+    
     while True:
-        try:
+        ###################CLOUD_RGB EXTRACT#############
+        cur_model_observation = get_cur_model_observation(camera_hand,camera_overhead, bestman)
+        
+        overhead_cloud_rgb_filter = get_scene_point_cloud(cur_model_observation,stage1segmentation)
+        frame_rgb = stage2editing.generate_cloud_rgb_to_image(overhead_cloud_rgb_filter)
+        result = model_sp.predict(frame_rgb)
+        predict_scene_state = [result[key]['pred'] for key in result.keys()]
+        predict_scene_state_str = [obj_states[key][predict_scene_state[index]] for index,key in enumerate(result.keys())]
+        print(predict_scene_state_str)
+
+        cup_pos_pred = result['cup_pos']['pred']
+        cup_pos_pred = int(input('"hand","cube","else"'))
+        cup_pos_str = obj_states['cup_pos'][cup_pos_pred]
+        ################# GO HOME #################
+        if cup_pos_str=="cube":
+            # Go Back Home
+            bestman.open_gripper()
+            bestman.go_home()
+            return
+        ################# Grasp #################
+        elif cup_pos_str=="else":
+            gripper_open_flag = 0 
+            # Move Towards Phase
+            has_cond=False
+            target_pose_position,target_pose_orientation_xyzw = savg_inference(model_savg,cur_model_observation,predictor,stage1segmentation,has_cond,visualize=visualize)
+            move_towards_pose = Pose(target_pose_position, target_pose_orientation_xyzw)
+            while True:
+                try:
+                    bestman.move_eef_to_goal_pose(move_towards_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
+                    print("SUCCESS------------------")
+                    break
+                except Exception as e:
+                    bestman.robot.recover_from_errors() 
+                    print("ERROR------------------")
+                    time.sleep(0.1)
+
+            #Interaction Phase
+            gripper_open_flag = ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage1segmentation,stage2editing,predictor,model_savg,model_va,gripper_open_flag)
+            
+            # Lift Up 5cm
+            cur_eff_pose = bestman.get_current_eef_pose()
+            move_towards_pose = Pose(cur_eff_pose.position+np.array([0,0,0.05]), cur_eff_pose.orientation)
             bestman.move_eef_to_goal_pose(move_towards_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
-            print("SUCCESS------------------")
-            break
-        except Exception as e:
-            bestman.robot.recover_from_errors() 
-            print("ERROR------------------")
-            time.sleep(0.1)
+        #################Place #################
+        elif cup_pos_str=="hand":
+            # Move Towards Phase
+            has_cond=True
+            target_pose_position,target_pose_orientation_xyzw = savg_inference(model_savg,cur_model_observation,predictor,stage1segmentation,has_cond,visualize=visualize)
+            move_towards_pose = Pose(target_pose_position, target_pose_orientation_xyzw)
+            while True:
+                try:
+                    bestman.move_eef_to_goal_pose(move_towards_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
+                    print("SUCCESS------------------")
+                    break
+                except Exception as e:
+                    bestman.robot.recover_from_errors() 
+                    print("ERROR------------------")
+                    time.sleep(0.1)
 
-    #Interaction Phase
-    gripper_open_flag = ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage1segmentation,stage2editing,predictor,model_savg,model_va,gripper_open_flag)
+            #Interaction Phase
+            gripper_open_flag = ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage1segmentation,stage2editing,predictor,model_savg,model_va,gripper_open_flag)
+            
+            # Lift Up 5cm
+            cur_eff_pose = bestman.get_current_eef_pose()
+            move_towards_pose = Pose(cur_eff_pose.position+np.array([-0.05,0,0.05]), cur_eff_pose.orientation)
+            bestman.move_eef_to_goal_pose(move_towards_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
 
-
-    # Go Back Home
-    bestman.open_gripper()
-    bestman.go_home()
 
 
 
@@ -600,6 +620,43 @@ def savg_inference(model_savg,cur_model_observation,predictor,stage1segmentation
     target_pose_orientation_xyzw = R.from_matrix(H_next_eff_trajectory[:3, :3]).as_quat()
     return target_pose_position,target_pose_orientation_xyzw
 
+
+
+import torchvision.transforms as T
+
+# ----------------------------------------
+# 1) 图像预处理，与训练保持一致
+# ----------------------------------------
+pre = T.Compose([
+    T.Resize(246),            # = int(224 * 1.1)
+    T.CenterCrop(224),
+    T.ToTensor(),
+    T.Normalize(mean=[0.485,0.456,0.406],
+                std=[0.229,0.224,0.225])
+])
+# ----------------------------------------
+# 3) 单张图片推理函数
+# ----------------------------------------
+@torch.no_grad()
+def predict(frame_rgb,model):
+    img = Image.fromarray(frame_rgb)
+    x = pre(img).unsqueeze(0).to(DEVICE)   # [1,3,224,224]
+
+    # 模型输出是 dict：{ 'door': logits, 'cup_pos': logits }
+    out = model(x)
+
+    result = {}
+    for head, logits in out.items():
+        # softmax -> 概率
+        probs = torch.softmax(logits, dim=1)[0]      # shape [num_classes]
+        pred = int(torch.argmax(probs).cpu())
+        result[head] = {
+            'probs': probs.cpu().tolist(),
+            'pred': pred
+        }
+    return result
+
+
 # 1.初始化机器人（原代码逻辑）
 bestman = Bestman_Real_Franka3()
 if bestman.initialize_robot() is not True:
@@ -720,15 +777,22 @@ model_savg = PoseACTCVAE(
     dropout=0.1,
     pre_norm=True,
 ).to(DEVICE)
-ckpt = torch.load(PRETRAINED_CKPT_PATH)
-model_savg.load_state_dict(ckpt["model"])
+ckpt_savg = torch.load(PRETRAINED_CKPT_PATH)
+model_savg.load_state_dict(ckpt_savg["model"])
 model_savg.eval()
 assert os.path.isfile(PRETRAINED_CKPT_PATH), f"ckpt not found: {PRETRAINED_CKPT_PATH}"
 
 
+###########MaskDp3WithoutState
 sys.path.append("/home/liusong/ProgramFiles/VA-VLA/DP3/3D-Diffusion-Policy/3D-Diffusion-Policy/")
 from DP3_ModelInference import DP3_ModelInference
 model_va = DP3_ModelInference()
+
+###########SuperVision
+sys.path.append("/home/liusong/ProgramFiles/REAP/SuperVision")
+from sp_eval import SuperVision_ModelInference
+model_sp = SuperVision_ModelInference()
+
 
 
 
@@ -749,7 +813,7 @@ while True:
         #Window Overview
         mission_execution_thread = threading.Thread(
             target=mission_execution,
-            args=(camera_hand,camera_overhead, bestman,stage1segmentation,stage2editing,predictor,model_savg,model_va))
+            args=(camera_hand,camera_overhead, bestman,stage1segmentation,stage2editing,predictor,model_savg,model_va,model_sp))
         mission_execution_thread.start()
         mission_execution_flag = False
 
