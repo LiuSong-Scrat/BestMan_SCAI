@@ -53,6 +53,11 @@ class Bestman_Real_Franka3:
         self.gripper = Gripper(self.cfg.Robot.fci_ip)
 
         self.initial_robot_states = self.robot.current_cartesian_state
+
+        self.robot.set_cartesian_impedance(
+            [10, 10, 10, 2, 2, 2]
+        )
+
         return True
     def release_robot(self):
         if self.robot_web_session.is_open:
@@ -70,8 +75,8 @@ class Bestman_Real_Franka3:
             self.robot_web_session.release_control()
         return True
     
-    def go_home(self):
-        start_qpos = JointMotion([-0.068755,-0.511863,0.072686,-2.79413,0.0465087,2.28272,-2.39184])
+    def go_home(self,home_js = np.array([-0.068755,-0.511863,0.072686,-2.79413,0.0465087,2.28272,-2.39184])):
+        start_qpos = JointMotion(home_js)
         self.robot.move(start_qpos)
 
     def open_gripper(self, speed=0.1, force=0):
@@ -88,7 +93,7 @@ class Bestman_Real_Franka3:
         # 创建一个反应动作，如果某种事件发生了，机器人就会执行该动作。
         reaction_motion = CartesianMotion(Affine([0.0, 0.0, -0.2]), ReferenceType.Relative)  # Move up for 10cm
         # 如果检测到Z方向的力大于30牛顿，就触发定义好的reaction_motion
-        reaction = Reaction(Measure.FORCE_Z < -20.0, reaction_motion) #向上的力大于3N
+        reaction = Reaction(Measure.FORCE_Z < -50.0, reaction_motion) #向上的力大于3N
         motion.add_reaction(reaction)
         def reaction_callback(robot_state: RobotState, rel_time: float, abs_time: float):
             print(f"Reaction fired at {abs_time}.")
@@ -118,7 +123,7 @@ class Bestman_Real_Franka3:
         self.motion_move_safety_ensure(execute_motion)
         self.robot.move(execute_motion,asynchronous=asynchronous)
         
-
+        time.sleep(0.15)
 
 
     def get_current_eef_pose(self):
@@ -132,7 +137,7 @@ class Bestman_Real_Franka3:
         cur_jpos = self.robot.current_joint_state.position
         return cur_jpos
    
-    def move_arm_to_joint_values(self, joint_values, target_vel=None, target_acc=None, MAX_VEL=2, MAX_ACC=0.5):
+    def move_arm_to_joint_values(self, joint_values, target_vel=None, target_acc=None, MAX_VEL=1, MAX_ACC=0.5):
         self.robot.joint_velocity_limit.set(np.array([MAX_VEL]).repeat(7))
         self.robot.joint_acceleration_limit.set(np.array([MAX_ACC]).repeat(7))
         joint_values = JointState(joint_values)
