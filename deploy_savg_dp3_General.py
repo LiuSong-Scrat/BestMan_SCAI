@@ -18,7 +18,7 @@ sys.path.append("/home/liusong/ProgramFiles/REAP/SAVG/savg/")
 sys.path.append("/home/liusong/ProgramFiles/REAP/SAVG/savg/models")
 from models.pose_act_cvae import PoseACTCVAE
 from utils.rot6d import pose9_to_homo
-from preprocess_hdf5 import load_cloud_from_group,maybe_bytes_to_str
+from preprocess_hdf5 import load_cloud_from_group,maybe_bytes_to_str,remove_outliers_fast
 from eval import single_data_inference
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -117,7 +117,7 @@ def update_cam_extrinsics(bestman,camera_name):
 
     return H_camera_extrinsic
 
-def ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage1segmentation,stage2editing,predictor,model_savg,model_va,gripper_open_flag):
+def ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage2editing,predictor,model_savg,model_va,allow_gripper_open_flag):
     model_va.policy_reset()
 
     while True:
@@ -152,11 +152,13 @@ def ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage1segme
             obj_masks = get_sam2_obj_masks_fast(predictor,img_overhead_rgb,obj_sets)
             # Objects CloudRgb Extracted 
             scene_pcd = GeometryUtils.cloud_rgb_to_pcd(overhead_cloud_rgb_workspace)
-            camera_intrics, H_world2image = stage1segmentation.setup_camera_transforms()
+            camera_intrics, H_world2image = stage2editing.setup_camera_transforms()
             for obj_str, obj_mask in obj_masks.items():
                 obj_seg_pcd = ProjectionUtils.get_seg_pcd(scene_pcd, H_world2image, camera_intrics, obj_mask)
                 obj_seg_cloud_rgb = np.hstack((np.array(obj_seg_pcd.points), 
                                                 np.array(255 * np.array(obj_seg_pcd.colors)).astype(np.uint8)))
+                # obj_seg_cloud_rgb = remove_outliers_fast(obj_seg_cloud_rgb, nb_neighbors=50, std_ratio=1)
+                
                 # ADD CloudRgb to Scene
                 masked_scene_cloud_rgb.append(obj_seg_cloud_rgb)
             # Convert Scene CloudRgb to Numpy
@@ -181,7 +183,7 @@ def ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage1segme
 
 
 
-        inference_action =  model_va.single_inference(cur_model_observation)
+        inference_action =  model_va.single_inference(cur_model_observation,visualize=True)
         if inference_action is None:
             continue
         
@@ -215,16 +217,16 @@ def ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage1segme
 
 
         inference_gripper_width=inference_action[-1]*2 #recover the normal scale
-        if gripper_open_flag==0 and inference_gripper_width<0.04:
-            gripper_open_flag = 1
+        if allow_gripper_open_flag==0 and inference_gripper_width<0.04:
+            allow_gripper_open_flag = 1
             bestman.close_gripper() 
-            return gripper_open_flag
-        if gripper_open_flag==1 and inference_gripper_width>0.078:
+            return allow_gripper_open_flag
+        if allow_gripper_open_flag==1 and inference_gripper_width>0.078:
             bestman.open_gripper()
-            gripper_open_flag = 0
-            return gripper_open_flag
+            allow_gripper_open_flag = 0
+            return allow_gripper_open_flag
 
-        if sys.stdin in select.select([sys.stdin], [], [], 0)[0]:
+        if sys.stdin in select.select([sys.stdin], [], [], 0.01)[0]:
             line = sys.stdin.readline()
             pressed_key = line.strip()
             if line:
@@ -232,21 +234,44 @@ def ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage1segme
             if pressed_key == 'o':
                 print("Open.................")
                 bestman.open_gripper()
-                gripper_open_flag = 0
-                return gripper_open_flag
+                allow_gripper_open_flag = 0
+                return allow_gripper_open_flag
  
 
-def mission_execution(camera_hand,camera_overhead, bestman,stage1segmentation,stage2editing,predictor,model_savg,model_va):
-
-    gripper_open_flag = 0 
+def mission_execution(camera_hand,camera_overhead, bestman,stage2editing,predictor,model_savg,model_va):
 
 
+    allow_gripper_open_flag = 0
+    ################# Open #################
+    # Move Towards Phase
+    obj_sets = ["target","cond"]  
+    has_cond=False
+    visualize=True
+    cur_model_observation = get_cur_model_observation(camera_hand,camera_overhead, bestman)
+    target_pose_position,target_pose_orientation_xyzw = savg_inference(model_savg,cur_model_observation,predictor,stage2editing,obj_sets,has_cond,visualize=visualize)
+    move_towards_pose = Pose(target_pose_position+np.array([0,0,0.0]), target_pose_orientation_xyzw)
+    while True:
+        try:
+            bestman.move_eef_to_goal_pose(move_towards_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
+            print("SUCCESS------------------")
+            break
+        except Exception as e:
+            bestman.robot.recover_from_errors() 
+            print("ERROR------------------")
+            time.sleep(0.1)
+
+    #Interaction Phase
+    allow_gripper_open_flag = ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage2editing,predictor,model_savg,model_va,allow_gripper_open_flag)
+    
+
+    
     ################# Grasp#################
     # Move Towards Phase
+    obj_sets = ["cond","target"]  
     has_cond=False
-    visualize=False
+    visualize=True
     cur_model_observation = get_cur_model_observation(camera_hand,camera_overhead, bestman)
-    target_pose_position,target_pose_orientation_xyzw = savg_inference(model_savg,cur_model_observation,predictor,stage1segmentation,has_cond,visualize=visualize)
+    target_pose_position,target_pose_orientation_xyzw = savg_inference(model_savg,cur_model_observation,predictor,stage2editing,obj_sets,has_cond,visualize=visualize)
     move_towards_pose = Pose(target_pose_position, target_pose_orientation_xyzw)
     while True:
         try:
@@ -259,21 +284,16 @@ def mission_execution(camera_hand,camera_overhead, bestman,stage1segmentation,st
             time.sleep(0.1)
 
     #Interaction Phase
-    gripper_open_flag = ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage1segmentation,stage2editing,predictor,model_savg,model_va,gripper_open_flag)
+    allow_gripper_open_flag = ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage2editing,predictor,model_savg,model_va,allow_gripper_open_flag)
     
-    # Lift Up 5cm
-    cur_eff_pose = bestman.get_current_eef_pose()
-    move_towards_pose = Pose(cur_eff_pose.position+np.array([0,0,0.05]), cur_eff_pose.orientation)
-    bestman.move_eef_to_goal_pose(move_towards_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
-
-
 
  
     #################Place#################
     # Move Towards Phase
+    obj_sets = ["target","cond"]  
     has_cond=True
     cur_model_observation = get_cur_model_observation(camera_hand,camera_overhead, bestman)
-    target_pose_position,target_pose_orientation_xyzw = savg_inference(model_savg,cur_model_observation,predictor,stage1segmentation,has_cond,visualize=visualize)
+    target_pose_position,target_pose_orientation_xyzw = savg_inference(model_savg,cur_model_observation,predictor,stage2editing,obj_sets,has_cond,visualize=visualize)
     move_towards_pose = Pose(target_pose_position, target_pose_orientation_xyzw)
     while True:
         try:
@@ -286,12 +306,42 @@ def mission_execution(camera_hand,camera_overhead, bestman,stage1segmentation,st
             time.sleep(0.1)
 
     #Interaction Phase
-    gripper_open_flag = ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage1segmentation,stage2editing,predictor,model_savg,model_va,gripper_open_flag)
+    allow_gripper_open_flag = ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage2editing,predictor,model_savg,model_va,allow_gripper_open_flag)
+
+    # Lift Up 5cm
+    cur_eff_pose = bestman.get_current_eef_pose()
+    move_towards_pose = Pose(cur_eff_pose.position+np.array([0,0,0.08]), cur_eff_pose.orientation)
+    bestman.move_eef_to_goal_pose(move_towards_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
+
+
+
+
+
+    #################Place#################
+    # Move Towards Phase
+    obj_sets = ["target","cond"]  
+    has_cond=False
+    cur_model_observation = get_cur_model_observation(camera_hand,camera_overhead, bestman)
+    target_pose_position,target_pose_orientation_xyzw = savg_inference(model_savg,cur_model_observation,predictor,stage2editing,obj_sets,has_cond,visualize=visualize)
+    move_towards_pose = Pose(target_pose_position, target_pose_orientation_xyzw)
+    while True:
+        try:
+            bestman.move_eef_to_goal_pose(move_towards_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
+            print("SUCCESS------------------")
+            break
+        except Exception as e:
+            bestman.robot.recover_from_errors() 
+            print("ERROR------------------")
+            time.sleep(0.1)
+
+    #Interaction Phase
+    allow_gripper_open_flag = ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage2editing,predictor,model_savg,model_va,allow_gripper_open_flag)
+
 
 
     # Go Back Home
     bestman.open_gripper()
-    bestman.go_home()
+    bestman.go_home(home_js)
 
 
 
@@ -324,7 +374,7 @@ def mission_execution(camera_hand,camera_overhead, bestman,stage1segmentation,st
             # #WORKSPACE DOWNSAMPLE
             # overhead_cloud_rgb_workspace = point_cloud_filter(overhead_cloud_rgb)  
             # scene_pcd = GeometryUtils.cloud_rgb_to_pcd(overhead_cloud_rgb_workspace)
-            # camera_intrics, H_world2image = stage1segmentation.setup_camera_transforms()
+            # camera_intrics, H_world2image = stage2editing.setup_camera_transforms()
             # for obj_str, obj_mask in obj_masks.items():
             #     obj_seg_pcd = ProjectionUtils.get_seg_pcd(scene_pcd, H_world2image, camera_intrics, obj_mask)
             #     obj_seg_cloud_rgb = np.hstack((np.array(obj_seg_pcd.points), 
@@ -361,37 +411,6 @@ def mission_execution(camera_hand,camera_overhead, bestman,stage1segmentation,st
             # model_va.predict_action_queue = deque()
         }
 
-
-
-
-
-
-    # ################# Grasp#################
-    # # Move Towards Phase
-    # has_cond=False
-    # visualize=True
-    # cur_model_observation = get_cur_model_observation(camera_hand,camera_overhead, bestman)
-    # target_pose_position,target_pose_orientation_xyzw = savg_inference(model_savg,cur_model_observation,predictor,stage1segmentation,has_cond,visualize=visualize)
-    # move_towards_pose = Pose(target_pose_position, target_pose_orientation_xyzw)
-    # bestman.move_eef_to_goal_pose(move_towards_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
-    # #Interaction Phase
-    # standard_quaternion = [0,1,0,0]
-    # standard_quaternion_twist = [ 0.7071068, 0.7071068, 0, 0 ]
-    # new_red_gripper = 0.09
-    # grasp_pose = [mouse_base_3d_points[0]-np.array([0,0,0.02])+np.array([0,0,new_red_gripper]), target_pose_orientation_xyzw] 
-    # skill_franka3_database.grasp(bestman, grasp_pose, approaching_dir='top', retracting_dir='top', D_pre=0.15, D_ret=0.15)
-
-
-    # #################Place#################
-    # # Move Towards Phase
-    # has_cond=True
-    # cur_model_observation = get_cur_model_observation(camera_hand,camera_overhead, bestman)
-    # target_pose_position,target_pose_orientation_xyzw = savg_inference(model_savg,cur_model_observation,predictor,stage1segmentation,has_cond,visualize=visualize)
-    # move_towards_pose = Pose(target_pose_position, target_pose_orientation_xyzw)
-    # bestman.move_eef_to_goal_pose(move_towards_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
-    # #Interaction Phase
-    # move_pose = [mouse_base_3d_points[1]+np.array([0,0,0.04])+np.array([0,0,new_red_gripper]), target_pose_orientation_xyzw] 
-    # skill_franka3_database.place(bestman, move_pose, retracting_dir='top', D_ret=0.10)
 
 
 
@@ -548,9 +567,9 @@ def get_base_points_from_cam_points(bestman,mouse_get_cam_3d_points,camera_name)
     return base_3d_points
 
 
-def savg_inference(model_savg,cur_model_observation,predictor,stage1segmentation,has_cond,visualize):
+def savg_inference(model_savg,cur_model_observation,predictor,stage2editing,obj_sets,has_cond,visualize):
     # Objects Segmentation 
-    obj_sets = ["yellow_mug","blue_cube"]  
+    
     img_overhead_rgb = cur_model_observation['overhead']
     obj_masks = get_sam2_obj_masks_fast(predictor,img_overhead_rgb,obj_sets)
 
@@ -558,7 +577,7 @@ def savg_inference(model_savg,cur_model_observation,predictor,stage1segmentation
     obj_seg_dict={}
     overhead_cloud_rgb = cur_model_observation['point_cloud']
     scene_pcd = GeometryUtils.cloud_rgb_to_pcd(overhead_cloud_rgb)
-    camera_intrics, H_world2image = stage1segmentation.setup_camera_transforms()
+    camera_intrics, H_world2image = stage2editing.setup_camera_transforms()
     for obj_str, obj_mask in obj_masks.items():
         obj_seg_pcd = ProjectionUtils.get_seg_pcd(scene_pcd, H_world2image, camera_intrics, obj_mask)
         obj_seg_cloud_rgb = np.hstack((np.array(obj_seg_pcd.points), 
@@ -567,13 +586,13 @@ def savg_inference(model_savg,cur_model_observation,predictor,stage1segmentation
 
     # ApproachMode Switch
     if has_cond:
-        cond_name = obj_sets[0]
-        cond_raw= obj_seg_dict[cond_name]['cloud_rgb']
-        target_raw= obj_seg_dict[obj_sets[1]]['cloud_rgb']
+        cond_name = 'cond'
+        cond_raw= obj_seg_dict['cond']['cloud_rgb']
+        target_raw= obj_seg_dict['target']['cloud_rgb']
     else:
         cond_name = "None"
         cond_raw = np.zeros((0, 6), dtype=np.float32)
-        target_raw= obj_seg_dict[obj_sets[0]]['cloud_rgb']
+        target_raw= obj_seg_dict['target']['cloud_rgb']
 
     # SAVG Inference
     cur_eff_trajectory = cur_model_observation['pose_eular']
@@ -583,7 +602,7 @@ def savg_inference(model_savg,cur_model_observation,predictor,stage1segmentation
             approaching_raw = cur_eff_trajectory # NO USE
             if has_cond:
                 H_pr = np.eye(4)
-                for i in range(2):
+                for i in range(3):
                     H_pr_slice,target_raw,cond_raw,approaching_raw,cond_name = single_data_inference(model_savg,target_raw,cond_raw,approaching_raw,cond_name,visualize=visualize)
                     H_pr = H_pr_slice@H_pr
             if has_cond != True:
@@ -600,12 +619,62 @@ def savg_inference(model_savg,cur_model_observation,predictor,stage1segmentation
     target_pose_orientation_xyzw = R.from_matrix(H_next_eff_trajectory[:3, :3]).as_quat()
     return target_pose_position,target_pose_orientation_xyzw
 
+def sam2_initialize(task_name,object_marker_list):
+    torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
+    if torch.cuda.get_device_properties(0).major >= 8:
+        # turn on tfloat32 for Ampere GPUs (https://pytorch.org/docs/stable/notes/cuda.html#tensorfloat-32-tf32-on-ampere-devices)
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+    import time
+    import h5py
+    sys.path.append("/home/liusong/ProgramFiles/SAM2/sam2")
+    from sam2.build_sam import build_sam2_camera_predictor
+
+    sam2_checkpoint = "/home/liusong/ProgramFiles/SAM2/sam2/checkpoints/sam2.1_hiera_small.pt"
+    model_cfg = "configs/sam2.1/sam2.1_hiera_s.yaml"
+    predictor = build_sam2_camera_predictor(model_cfg, sam2_checkpoint)
+
+    # img = cv2.resize(camera_overhead.get_rgb_image(),(640,480),cv2.INTER_LINEAR)
+    # cv2.imshow("img",img)
+    # cv2.waitKey(0)
+    # # cv2.imwrite("/home/liusong/ProgramFiles/BestMan/Dataset/Images/PutStationeryBox.png",cv2.cvtColor(img,cv2.COLOR_RGB2BGR))
+
+
+    frame = cv2.imread(f"/home/liusong/ProgramFiles/BestMan/Dataset/Images/{task_name}.png")
+    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    width, height = frame.shape[:2][::-1]
+    predictor.load_first_frame(frame)
+    if_init = True
+
+    ann_frame_idx = 0  # the frame index we interact with
+    # First annotation
+    ann_obj_id = 1  # give a unique id to each object we interact with (it can be any integers)
+    ##! add points, `1` means positive click and `0` means negative click
+    points = np.array(object_marker_list[0], dtype=np.float32)
+    labels = np.array([1,1,1], dtype=np.int32)
+    _, out_obj_ids, out_mask_logits = predictor.add_new_prompt(
+        frame_idx=ann_frame_idx, obj_id=ann_obj_id, points=points, labels=labels
+    )
+    
+    ann_obj_id = 2  # give a unique id to each object we inter act with (it can be any integers)
+    points = np.array(object_marker_list[1], dtype=np.float32)
+    labels = np.array([1,1,1], dtype=np.int32)
+    _, out_obj_ids, out_mask_logits = predictor.add_new_prompt(
+        frame_idx=ann_frame_idx, obj_id=ann_obj_id, points=points, labels=labels
+    )
+
+    return predictor
+
+
+
 # 1.初始化机器人（原代码逻辑）
 bestman = Bestman_Real_Franka3()
 if bestman.initialize_robot() is not True:
     exit(-1)
 bestman.open_gripper()
-bestman.go_home()
+#Twist 90 degree
+home_js = np.array([-0.07188314616233507, -0.5007457342122718, 0.07313486429670638, -2.7816527503720883, 0.05476125807473123, 2.2630911769337083, -0.7468963222873954])
+bestman.go_home(home_js)
 skill_franka3_database = skill_database.SkillFranka3Database()
 
 #2.Camera Initialize
@@ -622,62 +691,15 @@ time.sleep(bestman.cfg.Camera.init_delay)
 
 
 
-#3.SAM2 Initialize
-USE_SAM2 = True
-if USE_SAM2:
-    torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
-    if torch.cuda.get_device_properties(0).major >= 8:
-        # turn on tfloat32 for Ampere GPUs (https://pytorch.org/docs/stable/notes/cuda.html#tensorfloat-32-tf32-on-ampere-devices)
-        torch.backends.cuda.matmul.allow_tf32 = True
-        torch.backends.cudnn.allow_tf32 = True
-    import time
-    import h5py
-    sys.path.append("/home/liusong/ProgramFiles/SAM2/sam2")
-    from sam2.build_sam import build_sam2_camera_predictor
-
-    sam2_checkpoint = "/home/liusong/ProgramFiles/SAM2/sam2/checkpoints/sam2.1_hiera_small.pt"
-    model_cfg = "configs/sam2.1/sam2.1_hiera_s.yaml"
-    predictor = build_sam2_camera_predictor(model_cfg, sam2_checkpoint)
-
-    frame = cv2.imread("/home/liusong/ProgramFiles/BestMan/Dataset/Images/cube_stak.png")
-    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    width, height = frame.shape[:2][::-1]
-    # cv2.imshow("overhead_frame", cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
-    # cv2.waitKey(0)
-    predictor.load_first_frame(frame)
-    if_init = True
-    ann_frame_idx = 0  # the frame index we interact with
-    # First annotation
-    ann_obj_id = 1  # give a unique id to each object we interact with (it can be any integers)
-    ##! add points, `1` means positive click and `0` means negative click
-    points = np.array([[327, 310],[337,323],[332,334]], dtype=np.float32)
-    labels = np.array([1,1,1], dtype=np.int32)
-    _, out_obj_ids, out_mask_logits = predictor.add_new_prompt(
-        frame_idx=ann_frame_idx, obj_id=ann_obj_id, points=points, labels=labels
-    )
-
-    ann_obj_id = 2  # give a unique id to each object we interact with (it can be any integers)
-    points = np.array([[441, 308],[454,321],[447,335]], dtype=np.float32)
-    labels = np.array([1,1,1], dtype=np.int32)
-    _, out_obj_ids, out_mask_logits = predictor.add_new_prompt(
-        frame_idx=ann_frame_idx, obj_id=ann_obj_id, points=points, labels=labels
-    )
 
 
 
+# #4.load stage1 segmentation for camera parameters
+# stagegen_task_name = task_name
+# stagegen_config_file = f"/home/liusong/ProgramFiles/REAP/StageGen/config/{stagegen_task_name}.yaml"
+# stagegen_src_hdf5_path = f"/home/liusong/ProgramFiles/REAP/StageGen/source/{stagegen_task_name}.hdf5"
+# stage1segmentation = Stage1Segmentation(stagegen_config_file, stagegen_src_hdf5_path)
 
-
-#4.load stage1 segmentation for camera parameters
-stagegen_task_name = "real_task_simple"
-stagegen_config_file = f"/home/liusong/ProgramFiles/REAP/StageGen/config/{stagegen_task_name}.yaml"
-stagegen_src_hdf5_path = f"/home/liusong/ProgramFiles/REAP/StageGen/source/{stagegen_task_name}.hdf5"
-stage1segmentation = Stage1Segmentation(stagegen_config_file, stagegen_src_hdf5_path)
-
-
-import pickle
-with open(f"/home/liusong/ProgramFiles/REAP/StageGen/out/{stagegen_task_name}/{stagegen_task_name}_stage1_result.pkl", 'rb') as file:
-    stage1_result = pickle.load(file)
-stage2editing = Stage2Editing(stage1_result)
 
 
 
@@ -702,8 +724,19 @@ stage2editing = Stage2Editing(stage1_result)
 
 
 
+task_name = "PutStationeryBox"
+import pickle
+with open(f"/home/liusong/ProgramFiles/REAP/StageGen/out/{task_name}/{task_name}_stage1_result.pkl", 'rb') as file:
+    stage1_result = pickle.load(file)
+stage2editing = Stage2Editing(stage1_result)
+
+
+object_marker_list = [[[477,293],[485,320],[494,363]],[[342,306],[340,333],[341,362]]]
+predictor = sam2_initialize(task_name,object_marker_list)
+
+
 # 6.LOAD SAVG MODEL
-PRETRAINED_CKPT_PATH = "/home/liusong/ProgramFiles/REAP/SAVG/out/checkpoints/last.pt"
+SAVG_PRETRAINED_CKPT_PATH = f"/home/liusong/ProgramFiles/REAP/SAVG/out/checkpoints/{task_name}.pt"
 # model
 model_savg = PoseACTCVAE(
     pc_in_dim=6,
@@ -720,19 +753,25 @@ model_savg = PoseACTCVAE(
     dropout=0.1,
     pre_norm=True,
 ).to(DEVICE)
-ckpt = torch.load(PRETRAINED_CKPT_PATH)
+ckpt = torch.load(SAVG_PRETRAINED_CKPT_PATH)
 model_savg.load_state_dict(ckpt["model"])
 model_savg.eval()
-assert os.path.isfile(PRETRAINED_CKPT_PATH), f"ckpt not found: {PRETRAINED_CKPT_PATH}"
+assert os.path.isfile(SAVG_PRETRAINED_CKPT_PATH), f"ckpt not found: {SAVG_PRETRAINED_CKPT_PATH}"
 
 
+
+DP3_PRETRAINED_CKPT_PATH = f"/home/liusong/scp_receive/dp3/franka_real_simple_pose9/checkpoints/{task_name}.ckpt"
 sys.path.append("/home/liusong/ProgramFiles/VA-VLA/DP3/3D-Diffusion-Policy/3D-Diffusion-Policy/")
 from DP3_ModelInference import DP3_ModelInference
-model_va = DP3_ModelInference()
-
+model_va = DP3_ModelInference(DP3_PRETRAINED_CKPT_PATH)
 
 
 mission_execution_flag= True
+
+
+##############Subtask##########
+print("###########Subtask##########")
+[print(subtask) for subtask in stage2editing.subtask]
 
 while True:
 
@@ -749,7 +788,7 @@ while True:
         #Window Overview
         mission_execution_thread = threading.Thread(
             target=mission_execution,
-            args=(camera_hand,camera_overhead, bestman,stage1segmentation,stage2editing,predictor,model_savg,model_va))
+            args=(camera_hand,camera_overhead, bestman,stage2editing,predictor,model_savg,model_va))
         mission_execution_thread.start()
         mission_execution_flag = False
 

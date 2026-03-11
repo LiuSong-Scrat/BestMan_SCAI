@@ -7,7 +7,7 @@ Robot:
   password: franka123
   arm_home_joint_values: [-0.068755,-0.511863,0.072686,-2.79413,0.0465087,2.28272,-2.39184]    # in degrees
   frequency: 1000
-  velocity: 0.1
+  velocity: 0.25
   acceleration: 0.05
   jerk: 0.005
 

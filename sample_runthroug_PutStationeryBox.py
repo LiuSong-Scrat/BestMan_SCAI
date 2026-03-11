@@ -149,7 +149,8 @@ bestman = Bestman_Real_Franka3()
 if bestman.initialize_robot() is not True:
     exit(-1)
 bestman.open_gripper()
-bestman.go_home()
+home_js = np.array([-0.07188314616233507, -0.5007457342122718, 0.07313486429670638, -2.7816527503720883, 0.05476125807473123, 2.2630911769337083, -0.7468963222873954])
+bestman.go_home(home_js)
 skill_franka3_database = skill_database.SkillFranka3Database()
 
 #2.Camera Initialize
@@ -195,14 +196,13 @@ for i in range(50):
     #先点k字母，然后笔中心
 
     new_red_gripper = 0.01
-    standard_quaternion = [0,1,0,0] # #[0.442212, 0.896865, 0.00592168, 0.00684362] #[0,1,0,0]
+    standard_quaternion = [0.735709, 0.677228, -0.00406522, -0.00882531] # #[0.442212, 0.896865, 0.00592168, 0.00684362] #[0,1,0,0]
     standard_quaternion_twist = [ 0.7071068, 0.7071068, 0, 0 ]
     ##########################OPEN BOX##########################
-    move_pose1 = [mouse_base_3d_points[0]-np.array([0,-0.03,0.005])+np.array([0,0,new_red_gripper]), standard_quaternion] 
+    move_pose1 = [mouse_base_3d_points[0]-np.array([0,-0.01,0.010])+np.array([0,0,new_red_gripper]), standard_quaternion] 
     pre_move_pose= copy.deepcopy(move_pose1)
     pre_move_pose[0]+=np.array([0,0.05,0])
     force_move(bestman,Pose(pre_move_pose[0],move_pose1[1]), maxLinearVel=0.22, maxAngularVel=math.radians(45))
-    bestman.close_gripper()
     force_move(bestman,Pose(move_pose1[0],move_pose1[1]), maxLinearVel=0.22, maxAngularVel=math.radians(45))
 
     move_pose2= copy.deepcopy(move_pose1)
@@ -212,10 +212,16 @@ for i in range(50):
     move_pose3[0]+=np.array([0,-0.03,0.0])
     force_move(bestman,Pose(move_pose3[0],move_pose3[1]), maxLinearVel=0.22, maxAngularVel=math.radians(45))
     
+    # Lift Up 5cm
+    cur_eff_pose = bestman.get_current_eef_pose()
+    move_towards_pose = Pose(cur_eff_pose.position+np.array([0,0,0.08]), cur_eff_pose.orientation)
+    bestman.move_eef_to_goal_pose(move_towards_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
     bestman.open_gripper()
 
 
 
+
+    standard_quaternion = [0,1,0,0]
     ##########################Grasp Pose##########################
     while True:
         try:
@@ -229,16 +235,16 @@ for i in range(50):
             time.sleep(0.1)
             
     ##########################Place Pose##########################
-    move_pose = [mouse_base_3d_points[0]+np.array([0,-0.03,0.02])+np.array([0,0,new_red_gripper]), standard_quaternion] 
+    move_pose = [mouse_base_3d_points[0]+np.array([-0.0,-0.05,0.05])+np.array([0,0,new_red_gripper]), standard_quaternion] 
 
     D_pre = 0.05
     place_position = move_pose[0]
     place_orientation = move_pose[1]
     X,Y,Z = place_position
 
-    preparation_position = [X , 
-                            Y + D_pre, 
-                            Z ]
+    preparation_position = [X - D_pre, 
+                            Y - D_pre, 
+                            Z + D_pre]
     preparation_pose = Pose(preparation_position, place_orientation)
     force_move(bestman,preparation_pose, maxLinearVel=0.3, maxAngularVel=math.radians(90))
     preparation_position = [X , 
@@ -272,7 +278,7 @@ for i in range(50):
     sim_data_collection.episode_finish=True 
     sim_data_collection.data_save_hdf5()
     bestman.open_gripper()
-    bestman.go_home()
+    bestman.go_home(home_js)
 
 bestman.release_robot()
 exit(-1)
