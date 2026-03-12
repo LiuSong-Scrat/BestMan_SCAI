@@ -193,7 +193,7 @@ for i in range(50):
     collect_data_thread = threading.Thread(target=sim_data_collection.data_collection)
     collect_data_thread.start()
     #----------------------TASK EXECUTION----------------------# 
-
+    #先点k杯根，然后点笔末端中心
     new_red_gripper = 0.01
     standard_quaternion = [0.735709, 0.677228, -0.00406522, -0.00882531] # #[0.442212, 0.896865, 0.00592168, 0.00684362] #[0,1,0,0]
     standard_quaternion_twist = [ 0.7071068, 0.7071068, 0, 0 ]
@@ -201,7 +201,7 @@ for i in range(50):
     ##########################Grasp Pose##########################
     while True:
         try:
-            grasp_pose = [np.array([0.35 ,0.183029 ,0.0983265]), standard_quaternion] 
+            grasp_pose = [mouse_base_3d_points[0]+np.array([-0.09 ,-0.01 ,0.01]), standard_quaternion] 
             skill_franka3_database.grasp(bestman, grasp_pose, approaching_dir='top', retracting_dir='top', D_pre=0.05, D_ret=0.05,force=0.1)
             print("Grasp SUCCESS------------------")
             break
@@ -211,13 +211,20 @@ for i in range(50):
             time.sleep(0.1)
             
     ##########################Place Pose##########################
-    place_pose = [np.array([0.388634,-0.111869,0.1955655]), standard_quaternion] 
+    place_pose = [mouse_base_3d_points[1]+np.array([-0.09 ,-0.01 ,0.05]), standard_quaternion] 
 
     pre_place_pose = copy.deepcopy(place_pose)
     pre_place_pose[0] += np.array([0.0,0.05,0])
     force_move(bestman,Pose(pre_place_pose[0], pre_place_pose[1]), maxLinearVel=0.3, maxAngularVel=math.radians(90))
 
     force_move(bestman,Pose(place_pose[0], place_pose[1]), maxLinearVel=0.3, maxAngularVel=math.radians(90))
+
+
+    after_place_pose = copy.deepcopy(place_pose)
+    after_place_pose[0] += np.array([0.0,-0.03,-0.03])
+    force_move(bestman,Pose(after_place_pose[0], after_place_pose[1]), maxLinearVel=0.3, maxAngularVel=math.radians(90))
+
+
     bestman.open_gripper()
 
 
