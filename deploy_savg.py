@@ -130,7 +130,7 @@ def mission_execution(camera_hand,camera_overhead, bestman,stage1segmentation, m
     ################# Grasp#################
     # Move Towards Phase
     has_cond=False
-    visualize=True
+    visualize=False
     cur_model_observation = get_cur_model_observation(camera_hand,camera_overhead, bestman)
     target_pose_position,target_pose_orientation_xyzw = savg_inference(model_savg,cur_model_observation,predictor,stage1segmentation,has_cond,visualize=visualize)
     move_towards_pose = Pose(target_pose_position, target_pose_orientation_xyzw)
@@ -139,18 +139,23 @@ def mission_execution(camera_hand,camera_overhead, bestman,stage1segmentation, m
     new_red_gripper = 0.01
     grasp_pose = [mouse_base_3d_points[0]-np.array([0,0,0.02])+np.array([0,0,new_red_gripper]), target_pose_orientation_xyzw] 
     skill_franka3_database.grasp(bestman, grasp_pose, approaching_dir='top', retracting_dir='top', D_pre=0.05, D_ret=0.05)
-
-
-    #################Place#################
-    # Move Towards Phase
-    has_cond=True
-    cur_model_observation = get_cur_model_observation(camera_hand,camera_overhead, bestman)
-    target_pose_position,target_pose_orientation_xyzw = savg_inference(model_savg,cur_model_observation,predictor,stage1segmentation,has_cond,visualize=visualize)
-    move_towards_pose = Pose(target_pose_position, target_pose_orientation_xyzw)
+    bestman.open_gripper()
+    # Lift Up 5cm
+    cur_eff_pose = bestman.get_current_eef_pose()
+    move_towards_pose = Pose(cur_eff_pose.position+np.array([0,0,0.05]), cur_eff_pose.orientation)
     bestman.move_eef_to_goal_pose(move_towards_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
-    #Interaction Phase
-    move_pose = [mouse_base_3d_points[1]+np.array([0,0,0.03])+np.array([0,0,new_red_gripper]), target_pose_orientation_xyzw] 
-    skill_franka3_database.place(bestman, move_pose, retracting_dir='top', D_ret=0.05)
+
+
+    # #################Place#################
+    # # Move Towards Phase
+    # has_cond=True
+    # cur_model_observation = get_cur_model_observation(camera_hand,camera_overhead, bestman)
+    # target_pose_position,target_pose_orientation_xyzw = savg_inference(model_savg,cur_model_observation,predictor,stage1segmentation,has_cond,visualize=visualize)
+    # move_towards_pose = Pose(target_pose_position, target_pose_orientation_xyzw)
+    # b estman.move_eef_to_goal_pose(move_towards_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
+    # #Interaction Phase
+    # move_pose = [mouse_base_3d_points[1]+np.array([0,0,0.03])+np.array([0,0,new_red_gripper]), target_pose_orientation_xyzw] 
+    # skill_franka3_database.place(bestman, move_pose, retracting_dir='top', D_ret=0.05)
 
 
 
@@ -363,7 +368,7 @@ if USE_SAM2:
     model_cfg = "configs/sam2.1/sam2.1_hiera_s.yaml"
     predictor = build_sam2_camera_predictor(model_cfg, sam2_checkpoint)
 
-    frame = cv2.imread("/home/liusong/ProgramFiles/BestMan/Dataset/Images/cube_stak.png")
+    frame = cv2.imread("/home/liusong/ProgramFiles/BestMan/Dataset/Images/CubeStacking.png")
     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     width, height = frame.shape[:2][::-1]
     # cv2.imshow("overhead_frame", cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
@@ -392,7 +397,7 @@ if USE_SAM2:
 
 
 #4.load stage1 segmentation for camera parameters
-stagegen_task_name = "real_task_simple"
+stagegen_task_name = "CubeStacking"
 stagegen_config_file = f"/home/liusong/ProgramFiles/REAP/StageGen/config/{stagegen_task_name}.yaml"
 stagegen_src_hdf5_path = f"/home/liusong/ProgramFiles/REAP/StageGen/source/{stagegen_task_name}.hdf5"
 stage1segmentation = Stage1Segmentation(stagegen_config_file, stagegen_src_hdf5_path)

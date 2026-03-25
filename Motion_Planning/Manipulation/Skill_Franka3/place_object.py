@@ -110,7 +110,7 @@ if __name__ == "__main__":
     # grasp_pose = Pose([0.90, -0.20, 0.20], [0.0, 135.0, 0.0])
     # yaw = 0.0
     position = [0.303344,0.00522804,0.275582]
-    orientation = [0,1,0,0]
+    orientation = [1,0,0,0]
     move_pose = [position, orientation]
 
 

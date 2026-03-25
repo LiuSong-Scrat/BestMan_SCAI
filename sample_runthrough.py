@@ -70,73 +70,88 @@ def collection_data_update(camera_hand,camera_overhead,bestman,sim_data_collecti
 def get_base_points_from_cam_points(bestman,mouse_get_cam_3d_points,camera_name):
     base_3d_points = []
     for cam_obj_translation in mouse_get_cam_3d_points:
-        cam_obj_quaternion = R.from_matrix(np.array([[1,0,0],[0,1,0],[0,0,1]])).as_quat()
-        obj2cam_aff = Affine(cam_obj_translation,cam_obj_quaternion)
-
-        #camera_hand2eff
-        camera_hand2ee_quat = R.from_matrix(np.array([[0,1,0],[-1,0,0],[0,0,1]])).as_quat()
-        camera_hand2ee_aff = Affine([0.05,0.03,-0.04],camera_hand2ee_quat)
+        H_obj2cam = np.eye(4)
+        H_obj2cam[:3,3] = np.array(cam_obj_translation)
+        
+        
+        # #camera_hand2eff
+        # camera_hand2ee_quat = R.from_matrix(np.array([[0,1,0],[-1,0,0],[0,0,1]])).as_quat()
+        # camera_hand2ee_aff = Affine([-0.05,-0.03,-0.04],camera_hand2ee_quat) #x y z
+        H_camera_hand2eff = np.array([[-3.79969778e-02,-9.98877888e-01,-2.82700204e-02,-0.0557490352],
+                                        [9.99277851e-01,-3.79838244e-02,-1.00233611e-03,-0.0278605145],
+                                        [-7.25921195e-05,-2.82876910e-02,9.99599821e-01,-0.0525787876],
+                                        [0.00000000e+00,0.00000000e+00,0.00000000e+00, 1.00000000e+00]])
         cur_eff_pose = bestman.get_current_eef_pose()
-        eff2base_aff = Affine(cur_eff_pose.position,cur_eff_pose.orientation)
-        camera_hand2base_aff = eff2base_aff*camera_hand2ee_aff
+        H_eff2base = np.eye(4)
+        H_eff2base[:3,:3] = R.from_quat(cur_eff_pose.orientation).as_matrix()
+        H_eff2base[:3,3] = np.array(cur_eff_pose.position)
+        H_camera_hand2base = H_eff2base@H_camera_hand2eff
+
 
         if camera_name == "hand":
-            camera_overhead_extrics = camera_hand2base_aff
+            H_camera_extrics = H_camera_hand2base
         elif camera_name == "overhead":
 
             # # [ 1280x720  p[643.178 357.433]  f[898.481 899.104]  Brown Conrady [0.144588 -0.485378 0.0004702 -4.61056e-05 0.44427] ]
-            # camera_overhead2camera_hand = np.array([[-0.994942,0.093101,0.037705,0.082036],
-            #                                         [-0.044646,-0.746147,0.664282,-0.556717],
-            #                                         [0.089979,0.659240,0.746530,-0.367878],
+            # H_camera_overhead2camera_hand = np.array(
+            #                                         [[-0.997181,-0.023506,0.071261,0.001421],
+            #                                         [0.062925,-0.779280,0.623508,-0.602406],
+            #                                         [0.040877,0.626235,0.778562,0.030220],
             #                                         [0.000000,0.000000,0.000000,1.000000]])
-            # camera_overhead2camera_hand_quat = R.from_matrix(camera_overhead2camera_hand[:3,:3]).as_quat()
-            # camera_overhead2camera_hand_aff = Affine(camera_overhead2camera_hand[:3,3],camera_overhead2camera_hand_quat)
-            # camera_overhead2base_aff = camera_hand2base_aff*camera_overhead2camera_hand_aff
-            # camera_overhead_extrics = camera_overhead2base_aff
-            camera_overhead_extrics = Affine(np.array([ 0.85683062, -0.05194819,  0.65741864]), np.array([ 0.68633475,  0.63405731, -0.27509058, -0.22636501]))
-            
+            # H_camera_overhead2base = H_camera_hand2base@H_camera_overhead2camera_hand
+            # H_camera_extrics = H_camera_overhead2base
 
-        obj2base_aff = camera_overhead_extrics*obj2cam_aff
-        base_3d_points.append(obj2base_aff.translation)
+            H_camera_extrics = np.array([[-0.02634658,  0.76111293, -0.64808347,  0.89516434],
+                                                [ 0.99890868, -0.00496784, -0.04644601,  0.00406642],
+                                                [-0.0385712 , -0.64860046, -0.76015112,  0.65447038],
+                                                [ 0.        ,  0.        ,  0.        ,  1.        ]])
+
+        H_obj2base = H_camera_extrics@H_obj2cam
+        base_3d_points.append(H_obj2base[:3,3])
 
 
     return base_3d_points
 
 
 def update_cam_extrinsics(bestman,camera_name):
-    #camera_hand2eff
-    camera_hand2ee_quat = R.from_matrix(np.array([[0,1,0],[-1,0,0],[0,0,1]])).as_quat()
-    camera_hand2ee_aff = Affine([0.05,0.03,-0.04],camera_hand2ee_quat)
+    # #camera_hand2eff
+    # camera_hand2ee_quat = R.from_matrix(np.array([[0,1,0],[-1,0,0],[0,0,1]])).as_quat()
+    # camera_hand2ee_aff = Affine([-0.05,-0.03,-0.04],camera_hand2ee_quat) #x y z
+    H_camera_hand2eff = np.array([[-3.79969778e-02,-9.98877888e-01,-2.82700204e-02,-0.0557490352],
+                                    [9.99277851e-01,-3.79838244e-02,-1.00233611e-03,-0.0278605145],
+                                    [-7.25921195e-05,-2.82876910e-02,9.99599821e-01,-0.0525787876],
+                                    [0.00000000e+00,0.00000000e+00,0.00000000e+00, 1.00000000e+00]])
     cur_eff_pose = bestman.get_current_eef_pose()
-    eff2base_aff = Affine(cur_eff_pose.position,cur_eff_pose.orientation)
-    camera_hand2base_aff = eff2base_aff*camera_hand2ee_aff
+    H_eff2base = np.eye(4)
+    H_eff2base[:3,:3] = R.from_quat(cur_eff_pose.orientation).as_matrix()
+    H_eff2base[:3,3] = np.array(cur_eff_pose.position)
+    H_camera_hand2base = H_eff2base@H_camera_hand2eff
 
+    
     if camera_name == "D435I":
-        camera_overhead_extrics = camera_hand2base_aff
+        H_camera_extrics = H_camera_hand2base
     elif camera_name == "L515":
 
         # # [ 1280x720  p[643.178 357.433]  f[898.481 899.104]  Brown Conrady [0.144588 -0.485378 0.0004702 -4.61056e-05 0.44427] ]
-        # camera_overhead2camera_hand = np.array([[-0.994942,0.093101,0.037705,0.082036],
-        #                                         [-0.044646,-0.746147,0.664282,-0.576643],
-        #                                         [0.089979,0.659240,0.746530,-0.352948],
+        # H_camera_overhead2camera_hand = np.array(
+        #                                         [[-0.997181,-0.023506,0.071261,0.001421],
+        #                                         [0.062925,-0.779280,0.623508,-0.602406],
+        #                                         [0.040877,0.626235,0.778562,0.030220],
         #                                         [0.000000,0.000000,0.000000,1.000000]])
-        # camera_overhead2camera_hand_quat = R.from_matrix(camera_overhead2camera_hand[:3,:3]).as_quat()
-        # camera_overhead2camera_hand_aff = Affine(camera_overhead2camera_hand[:3,3],camera_overhead2camera_hand_quat)
-        # camera_overhead2base_aff = camera_hand2base_aff*camera_overhead2camera_hand_aff
-        # camera_overhead_extrics = camera_overhead2base_aff
-        camera_overhead_extrics = Affine(np.array([ 0.85683062, -0.05194819,  0.65741864]), np.array([ 0.68633475,  0.63405731, -0.27509058, -0.22636501]))
-    
-    H_camera_extrinsic = np.eye(4) 
-    Rotation = R.from_quat(camera_overhead_extrics.quaternion).as_matrix()
-    H_camera_extrinsic[:3,:3] = Rotation
-    H_camera_extrinsic[:3,3] = camera_overhead_extrics.translation
+        # H_camera_overhead2base = H_camera_hand2base@H_camera_overhead2camera_hand
+        # H_camera_extrics = H_camera_overhead2base
 
-    return H_camera_extrinsic
+        H_camera_extrics = np.array([[-0.02634658,  0.76111293, -0.64808347,  0.89516434],
+                                            [ 0.99890868, -0.00496784, -0.04644601,  0.00406642],
+                                            [-0.0385712 , -0.64860046, -0.76015112,  0.65447038],
+                                            [ 0.        ,  0.        ,  0.        ,  1.        ]])
+    return H_camera_extrics
 # 1.初始化机器人（原代码逻辑）
 bestman = Bestman_Real_Franka3()
 if bestman.initialize_robot() is not True:
     exit(-1)
 bestman.open_gripper()
+home_js = np.array([-0.11582,-0.476437,0.0715459,-1.69814,0.0351751,1.22258,0.745147])
 bestman.go_home()
 skill_franka3_database = skill_database.SkillFranka3Database()
 
@@ -181,9 +196,9 @@ for i in range(50):
     collect_data_thread.start()
     #----------------------TASK EXECUTION----------------------# 
     #Grasp Pose
-    standard_quaternion = [0.442212, 0.896865, 0.00592168, 0.00684362] # #[0.442212, 0.896865, 0.00592168, 0.00684362] #[0,1,0,0]
+    standard_quaternion = [1,0,0,0] # #[0.909507,-0.415611,-0.00766705,-0.00220353] #[1,0,0,0]
     standard_quaternion_twist = [ 0.7071068, 0.7071068, 0, 0 ]
-    new_red_gripper = 0.01
+    new_red_gripper = 0.045
 
     while True:
         try:
@@ -208,7 +223,7 @@ for i in range(50):
             cosr_cosp = 1.0 - 2.0 * (y * y + z * z)
             yaw = math.atan2(sinr_cosp, cosr_cosp)
             return yaw
-        move_pose = [mouse_base_3d_points[1]+np.array([0,0,0.03])+np.array([0,0,new_red_gripper]), standard_quaternion] 
+        move_pose = [mouse_base_3d_points[1]+np.array([0,0,0.02])+np.array([0,0,new_red_gripper]), standard_quaternion] 
         D_pre = 0.05
         place_position = move_pose[0]
         place_orientation = move_pose[1]
@@ -217,7 +232,7 @@ for i in range(50):
         s = abs(math.sin(yaw))
         X,Y,Z = place_position
         preparation_position = [X - np.sign(X) * D_pre * c, 
-                                Y + np.sign(Y) * D_pre * s, 
+                                Y - np.sign(Y) * D_pre * s, 
                                 Z]
         try:
             preparation_pose = Pose(preparation_position, place_orientation)
@@ -231,14 +246,6 @@ for i in range(50):
             print("ERROR------------------")
             time.sleep(0.1)
     
-    
-    #Grasp Pose
-    # grasp_pose = [mouse_base_3d_points[0]-np.array([0,0,0.02])+np.array([0,0,new_red_gripper]), standard_quaternion] 
-    # skill_franka3_database.grasp(bestman, grasp_pose, approaching_dir='top', retracting_dir='top', D_pre=0.05, D_ret=0.05)
-
-    # #Place Pose
-    # move_pose = [mouse_base_3d_points[1]+np.array([0,0,0.03])+np.array([0,0,new_red_gripper]), standard_quaternion] 
-    # skill_franka3_database.place(bestman, move_pose, retracting_dir='top', D_ret=0.05)
 
     #2.Consumer Save & Restart
     sim_data_collection.episode_finish=True 

@@ -56,8 +56,8 @@ if __name__ == "__main__":
     # position = [0.55,-0.05,0.45]
     # orientation = [0.999649,0.00253632,-0.0196627,0.0175826]
     # move_pose = [position, orientation]
-    position = [0.35,-0.0,0.25] 
-    orientation = [0,1,0,0]
+    position = [0.35,-0.0,0.65] 
+    orientation = [1,0,0,0]
     move_pose = [position, orientation]
 
     move(bestman, move_pose)

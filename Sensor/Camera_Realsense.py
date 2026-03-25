@@ -58,7 +58,12 @@ class Camera_Realsense:
         # 初始化 RealSense pipeline
         self.pipeline = rs.pipeline()
         self.config = rs.config()
+
         self.config.enable_device(device_sno)
+        pipeline_wrapper = rs.pipeline_wrapper(self.pipeline)
+        pipeline_profile = self.config.resolve(pipeline_wrapper)
+
+
         self.config.enable_stream(
             rs.stream.color, self.width, self.height, rs.format.bgr8, cfg.fps)
         self.config.enable_stream(
@@ -87,6 +92,7 @@ class Camera_Realsense:
         if not color_frame or not depth_frame:
             raise RuntimeError("Could not retrieve frames from RealSense camera.")
 
+
         intrinsics = color_frame.profile.as_video_stream_profile().get_intrinsics()
         self.fx = intrinsics.fx
         self.fy = intrinsics.fy
@@ -107,7 +113,7 @@ class Camera_Realsense:
         # 用于暂存获取的彩色图和深度图
         self.colors = None  # (H, W, 3)
         self.depths = None  # (H, W), 单位: 米
-
+        self.pc = rs.pointcloud()
         # 默认先更新一次图像
         self.update()
 
@@ -309,34 +315,11 @@ class Camera_Realsense:
         return rotation_matrix @ vector
 
     def visualize_3d_points(self):
-        """
-        使用 Open3D 可视化当前帧转换成的 3D 点云。
-        """
-        if self.colors is None or self.depths is None:
-            print("Warning: No image data. Call update() first.")
-            return
-
-        # 转为 open3d.Image
-        color_o3d = o3d.geometry.Image(self.colors)
-        depth_o3d = o3d.geometry.Image((self.depths * 1000).astype(np.uint16))
-
-        # 构建 RGBD 图像
-        rgbd_image = o3d.geometry.RGBDImage.create_from_color_and_depth(
-            color_o3d,
-            depth_o3d,
-            convert_rgb_to_intensity=False
-        )
-
-        # 相机内参
-        intrinsic = o3d.camera.PinholeCameraIntrinsic(
-            self.width, self.height, self.fx, self.fy, self.cx, self.cy
-        )
-
-        # 从 RGBD 构建点云
-        pcd = o3d.geometry.PointCloud.create_from_rgbd_image(rgbd_image, intrinsic)
-
-        # 如果需要将点云转到机械臂基座坐标系，也可在此处做变换
-        # pcd.transform(self.camera_to_arm_base)
+        vtx,colors_rgb = self.get_3d_points()
+        # 6. 更新 Open3D 点云对象
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(vtx)
+        pcd.colors = o3d.utility.Vector3dVector(colors_rgb)
 
         # 可视化
         coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
@@ -350,38 +333,57 @@ class Camera_Realsense:
         vis.destroy_window()
 
     def get_3d_points(self):
-        """
-        将当前帧的深度图转换为点云数据 (points + colors)。
+        try:
+            frames = self.pipeline.wait_for_frames()
+            aligned_frames = self.align.process(frames)
 
-        Returns:
-            tuple: (points, colors)
-                points: (N, 3) np.ndarray
-                colors: (N, 3) np.ndarray, 范围 [0, 1]
-        """
-        self.update()
-        if self.colors is None or self.depths is None:
-            print("Warning: No image data. Call update() first.")
-            return None, None
+            color_frame = aligned_frames.get_color_frame()
+            aligned_depth_frame = aligned_frames.get_depth_frame()
+            # 1. 将点云映射到彩色图像坐标系 (因为我们要用彩色图的颜色)
+            # 注意：这里我们直接使用 aligned_frames，因为它们已经对齐过了
+            self.pc.map_to(color_frame)
+            points = self.pc.calculate(aligned_depth_frame)
+            
+            # --- B. 数据处理 (NumPy) ---
+            depth_image = np.asanyarray(aligned_depth_frame.get_data())
+            color_image = np.asanyarray(color_frame.get_data())
 
-        h, w = self.depths.shape
-        xmap, ymap = np.meshgrid(np.arange(w), np.arange(h))
-        Z = self.depths
+            # 2. 计算点云坐标 (x,y,z) 和 纹理坐标
+            points = self.pc.calculate(aligned_depth_frame)
+            
+            # 3. 提取顶点 (N, 3) 和 纹理 (N, 2)
+            vtx = np.asanyarray(points.get_vertices()).view(np.float32).reshape(-1, 3)
+            tex = np.asanyarray(points.get_texture_coordinates()).view(np.float32).reshape(-1, 2)
 
-        # 剔除无效深度值
-        mask = (Z > self.min_depth) & (Z < self.max_depth) & ~np.isnan(Z)
-        Z[~mask] = 0
-        # print(Z)
+            # 4. 过滤掉无效点 (深度为0的点会产生 [0,0,0] 或无效坐标)
+            # 简单的过滤：去除全零向量
+            valid_indices = np.any(vtx != 0, axis=1)
+            vtx = vtx[valid_indices]
+            tex = tex[valid_indices]
 
-        X = (xmap - self.cx) / self.fx * Z
-        Y = (ymap - self.cy) / self.fy * Z
 
-        points = np.stack([X, Y, Z], axis=-1)[mask]
-        # print(points)
-        # print(points.shape)
-        colors = (self.colors.astype(np.float32) / 255.0)[mask]
 
-        # print(f"Generated {points.shape[0]} 3D points.")
-        return points, colors
+            # 5. 根据纹理坐标从彩色图中提取颜色
+            # 纹理坐标范围是 [0, 1]，需要映射到像素坐标 [0, width], [0, height]
+            h, w, _ = color_image.shape
+            tex_x = (tex[:, 0] * (w - 1)).astype(int)
+            tex_y = (tex[:, 1] * (h - 1)).astype(int)
+            
+            # 边界检查，防止索引越界
+            mask = (tex_x >= 0) & (tex_x < w) & (tex_y >= 0) & (tex_y < h)
+            tex_x = tex_x[mask]
+            tex_y = tex_y[mask]
+            vtx = vtx[mask]
+
+            # 提取颜色 (OpenCV 读取的是 BGR，Open3D 需要 RGB 且归一化到 0-1)
+            colors_bgr = color_image[tex_y, tex_x]
+            colors_rgb = colors_bgr[:, ::-1].astype(float) / 255.0
+
+            return vtx,colors_rgb
+
+        except Exception as e:
+            print(f"Error during get frame: {e}")
+            self.close()
     def get_cam_3d_points_from_mouse(self) -> Optional[np.ndarray]:
         """
         通过鼠标在 RGB 图像上点击，获取对应的相机坐标系下的 3D 点。

@@ -7,7 +7,7 @@ Robot:
   password: franka123
   arm_home_joint_values: [-0.068755,-0.511863,0.072686,-2.79413,0.0465087,2.28272,-2.39184]    # in degrees
   frequency: 1000
-  velocity: 0.25
+  velocity: 0.2
   acceleration: 0.1
   jerk: 0.005
 
@@ -49,8 +49,8 @@ Camera:
   D435I:
     dev_name: "D435I"
     fov: 69             # Field of View
-    width: 640          # width
-    height: 480         # height
+    width: 1280          # width
+    height: 720         # height
     depth_width: 640
     depth_height: 480
     nearVal: 0.1        # Camera near viewing distance

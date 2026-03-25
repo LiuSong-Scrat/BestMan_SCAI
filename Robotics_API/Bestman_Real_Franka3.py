@@ -75,7 +75,7 @@ class Bestman_Real_Franka3:
             self.robot_web_session.release_control()
         return True
     
-    def go_home(self,home_js = np.array([-0.068755,-0.511863,0.072686,-2.79413,0.0465087,2.28272,-2.39184])):
+    def go_home(self,home_js = np.array([-0.0684262,-0.512061,0.0723129,-2.794,0.0469305,2.28233,0.749217])):
         start_qpos = JointMotion(home_js)
         self.robot.move(start_qpos)
 
