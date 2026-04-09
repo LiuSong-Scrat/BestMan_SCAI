@@ -102,7 +102,7 @@ class SkillFranka3Database:
         # Move robot to target pose
         print('MOVING to grasp pose')
         target_pose = Pose(raw_pose[0], raw_pose[1])
-        bestman.move_eef_to_goal_pose(target_pose, maxLinearVel=0.1, maxAngularVel=math.radians(45))
+        bestman.move_eef_to_goal_pose(target_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
         print('MOVED to grasp pose')
 
 
@@ -112,7 +112,7 @@ class SkillFranka3Database:
         # Move robot to retracting pose
         print('MOVING to retracting pose')
         retracting_pose = Pose(retraction_position, grasp_orientation)
-        bestman.move_eef_to_goal_pose(retracting_pose, maxLinearVel=0.1, maxAngularVel=math.radians(45))
+        bestman.move_eef_to_goal_pose(retracting_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
         print('MOVED to retracting pose')
 
 
@@ -177,13 +177,13 @@ class SkillFranka3Database:
         # Move robot to preparation pose
         print('MOVING to preparation pose')
         preparation_pose = Pose(place_position, place_orientation)
-        bestman.move_eef_to_goal_pose(preparation_pose, maxLinearVel=0.1, maxAngularVel=math.radians(45))
+        bestman.move_eef_to_goal_pose(preparation_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
         print('MOVED to preparation pose')
 
 
         print('MOVING to place pose')
         place_pose = preparation_pose
-        bestman.move_eef_to_goal_pose(place_pose, maxLinearVel=0.1, maxAngularVel=math.radians(45))
+        bestman.move_eef_to_goal_pose(place_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
         bestman.open_gripper()
         print('MOVED to place pose')
 
@@ -200,7 +200,7 @@ class SkillFranka3Database:
         elif retracting_dir == 'iso':
             retraction_position.append(current_pose.position[2] + D_ret_decom_ver)
         retracting_pose = Pose(retraction_position, place_orientation)
-        bestman.move_eef_to_goal_pose(retracting_pose, maxLinearVel=0.1, maxAngularVel=math.radians(45))
+        bestman.move_eef_to_goal_pose(retracting_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
         print('MOVED to retracting pose')
 
         # update robot parameters 

@@ -102,9 +102,9 @@ def get_base_points_from_cam_points(bestman,mouse_get_cam_3d_points,camera_name)
             # H_camera_extrics = H_camera_overhead2base
 
             H_camera_extrics = np.array([[-0.02634658,  0.76111293, -0.64808347,  0.89516434],
-                                                [ 0.99890868, -0.00496784, -0.04644601,  0.00406642],
-                                                [-0.0385712 , -0.64860046, -0.76015112,  0.65447038],
-                                                [ 0.        ,  0.        ,  0.        ,  1.        ]])
+                                        [ 0.99890868, -0.00496784, -0.04644601,  0.00406642],
+                                        [-0.0385712 , -0.64860046, -0.76015112,  0.65447038],
+                                        [ 0.        ,  0.        ,  0.        ,  1.        ]])
 
         H_obj2base = H_camera_extrics@H_obj2cam
         base_3d_points.append(H_obj2base[:3,3])
@@ -198,7 +198,7 @@ for i in range(50):
     #Grasp Pose
     standard_quaternion = [1,0,0,0] # #[0.909507,-0.415611,-0.00766705,-0.00220353] #[1,0,0,0]
     standard_quaternion_twist = [ 0.7071068, 0.7071068, 0, 0 ]
-    new_red_gripper = 0.045
+    new_red_gripper = 0.04
 
     while True:
         try:
@@ -223,7 +223,7 @@ for i in range(50):
             cosr_cosp = 1.0 - 2.0 * (y * y + z * z)
             yaw = math.atan2(sinr_cosp, cosr_cosp)
             return yaw
-        move_pose = [mouse_base_3d_points[1]+np.array([0,0,0.02])+np.array([0,0,new_red_gripper]), standard_quaternion] 
+        move_pose = [mouse_base_3d_points[1]+np.array([0,0,0.015])+np.array([0,0,new_red_gripper]), standard_quaternion] 
         D_pre = 0.05
         place_position = move_pose[0]
         place_orientation = move_pose[1]
@@ -232,7 +232,7 @@ for i in range(50):
         s = abs(math.sin(yaw))
         X,Y,Z = place_position
         preparation_position = [X - np.sign(X) * D_pre * c, 
-                                Y - np.sign(Y) * D_pre * s, 
+                                Y + np.sign(Y) * D_pre * s, 
                                 Z]
         try:
             preparation_pose = Pose(preparation_position, place_orientation)

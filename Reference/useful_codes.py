@@ -42,12 +42,12 @@ savg_dict = {
     'cond_name': cond_name,                # 字符串
 }
 # 保存
-with open('/home/liusong/temp/asvg_obs_dict.pkl', 'wb') as f:
+with open('/home/liusong/temp/savg_obs_dict.pkl', 'wb') as f:
     pickle.dump(savg_dict, f)
 
 
 # 读取
-with open('/home/liusong/temp/asvg_obs_dict.pkl', 'rb') as f:
+with open('/home/liusong/temp/savg_obs_dict.pkl', 'rb') as f:
     savg_dict = pickle.load(f)
 
 target_raw,cond_raw,approaching_raw,cond_name=savg_dict['target_raw'],savg_dict['cond_raw'],savg_dict['approaching_raw'],savg_dict['cond_name']

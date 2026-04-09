@@ -341,15 +341,13 @@ class Camera_Realsense:
             aligned_depth_frame = aligned_frames.get_depth_frame()
             # 1. 将点云映射到彩色图像坐标系 (因为我们要用彩色图的颜色)
             # 注意：这里我们直接使用 aligned_frames，因为它们已经对齐过了
+            # 2. 计算点云坐标 (x,y,z) 和 纹理坐标
             self.pc.map_to(color_frame)
             points = self.pc.calculate(aligned_depth_frame)
             
             # --- B. 数据处理 (NumPy) ---
             depth_image = np.asanyarray(aligned_depth_frame.get_data())
             color_image = np.asanyarray(color_frame.get_data())
-
-            # 2. 计算点云坐标 (x,y,z) 和 纹理坐标
-            points = self.pc.calculate(aligned_depth_frame)
             
             # 3. 提取顶点 (N, 3) 和 纹理 (N, 2)
             vtx = np.asanyarray(points.get_vertices()).view(np.float32).reshape(-1, 3)
