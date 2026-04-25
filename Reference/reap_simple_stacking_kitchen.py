@@ -1345,7 +1345,7 @@ for _ in range(wait_steps):
 
 ############3.LOAD SAVG MODEL
 model_savg = PoseACTCVAE(
-    pc_tokens=512,
+    pc_tokens=256,
     geo_k=256,
     model_dim=256,
     latent_dim=32,

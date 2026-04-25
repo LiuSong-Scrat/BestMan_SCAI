@@ -375,7 +375,7 @@ class Camera_Realsense:
 
             # 提取颜色 (OpenCV 读取的是 BGR，Open3D 需要 RGB 且归一化到 0-1)
             colors_bgr = color_image[tex_y, tex_x]
-            colors_rgb = colors_bgr[:, ::-1].astype(float) / 255.0
+            colors_rgb = colors_bgr[:, ::-1].astype(np.float32) / 255.0
 
             return vtx,colors_rgb
 

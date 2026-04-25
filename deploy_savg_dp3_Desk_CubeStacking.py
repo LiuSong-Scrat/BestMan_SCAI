@@ -78,20 +78,21 @@ def farthest_point_sampling(points, num_points=1024, use_cuda=True):
 def uniform_random_sample_points(xyzrgb: np.ndarray, M: int):
     N = xyzrgb.shape[0]
     if N == 0:
-        return np.zeros((M, 6))
+        return np.zeros((M, 6)).astype(np.float32)
     if N >= M:
         idx = np.linspace(0, N - 1, M).astype(np.int64)
         return xyzrgb[idx]
     else:
         extra = np.random.choice(N, M - N, replace=True)
-        return np.concatenate([xyzrgb, xyzrgb[extra]], axis=0)
+        return np.concatenate([xyzrgb, xyzrgb[extra]], axis=0).astype(np.float32)
+
 
 
 def update_cam_extrinsics(bestman,camera_name):
     # #camera_hand2eff
     # camera_hand2ee_quat = R.from_matrix(np.array([[0,1,0],[-1,0,0],[0,0,1]])).as_quat()
     # camera_hand2ee_aff = Affine([-0.05,-0.03,-0.04],camera_hand2ee_quat) #x y z
-    H_camera_hand2eff = np.array([[-3.79969778e-02,-9.98877888e-01,-2.82700204e-02,-0.0557490352],
+    H_camera_hand2eff = np.array([[-3.79969778e-02,-9.98877888e-01,-2.82700204e-02,-0.0457490352],
                                     [9.99277851e-01,-3.79838244e-02,-1.00233611e-03,-0.0278605145],
                                     [-7.25921195e-05,-2.82876910e-02,9.99599821e-01,-0.0525787876],
                                     [0.00000000e+00,0.00000000e+00,0.00000000e+00, 1.00000000e+00]])
@@ -108,22 +109,25 @@ def update_cam_extrinsics(bestman,camera_name):
 
         # # [ 1280x720  p[643.178 357.433]  f[898.481 899.104]  Brown Conrady [0.144588 -0.485378 0.0004702 -4.61056e-05 0.44427] ]
         # H_camera_overhead2camera_hand = np.array(
-        #                                         [[-0.997181,-0.023506,0.071261,0.001421],
-        #                                         [0.062925,-0.779280,0.623508,-0.602406],
-        #                                         [0.040877,0.626235,0.778562,0.030220],
+        #                                        [[-0.990899,-0.042183,0.127831,-0.011011],
+        #                                         [0.106080,-0.829292,0.548653,-0.522800],
+        #                                         [0.082866,0.557220,0.826219,0.012114],
         #                                         [0.000000,0.000000,0.000000,1.000000]])
         # H_camera_overhead2base = H_camera_hand2base@H_camera_overhead2camera_hand
         # H_camera_extrics = H_camera_overhead2base
 
-        H_camera_extrics = np.array([[-0.02634658,  0.76111293, -0.64808347,  0.89516434],
-                                    [ 0.99890868, -0.00496784, -0.04644601,  0.00406642],
-                                    [-0.0385712 , -0.64860046, -0.76015112,  0.65447038],
+        H_camera_extrics = np.array([[-0.07092347,  0.81353088, -0.5771792 ,  0.82677765],
+                                    [ 0.99429651,  0.01145425, -0.10603806,  0.01910927],
+                                    [-0.07965476, -0.58140782, -0.80970292,  0.67453982],
                                     [ 0.        ,  0.        ,  0.        ,  1.        ]])
+
+
     return H_camera_extrics
+        
 
 def ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage1segmentation,stage2editing,predictor,model_savg,model_va,gripper_open_flag):
     model_va.policy_reset()
-    model_va.policy.n_action_steps=25
+    model_va.policy.n_action_steps=25 #25
 
     while True:
         if  len(model_va.predict_action_queue)<model_va.policy.horizon-model_va.policy.n_action_steps+2:
@@ -219,11 +223,11 @@ def ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage1segme
 
 
         inference_gripper_width=inference_action[-1]*2 #recover the normal scale
-        if gripper_open_flag==0 and inference_gripper_width<0.04:
+        if gripper_open_flag==0 and inference_gripper_width<0.04: 
             gripper_open_flag = 1
             bestman.close_gripper() 
             return gripper_open_flag
-        if gripper_open_flag==1 and inference_gripper_width>0.078:
+        if gripper_open_flag==1 and inference_gripper_width>0.05: ###注意不同src hdf5 可能最终末端值不同
             bestman.open_gripper()
             gripper_open_flag = 0
             return gripper_open_flag
@@ -272,7 +276,7 @@ def mission_execution(camera_hand,camera_overhead, bestman,stage1segmentation,st
     
     # Lift Up 5cm
     cur_eff_pose = bestman.get_current_eef_pose()
-    move_towards_pose = Pose(cur_eff_pose.position+np.array([0,0,0.05]), cur_eff_pose.orientation)
+    move_towards_pose = Pose(cur_eff_pose.position+np.array([0,0,0.06]), cur_eff_pose.orientation)
     bestman.move_eef_to_goal_pose(move_towards_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
 
 
@@ -419,7 +423,7 @@ def get_cur_model_observation(camera_hand,camera_overhead,bestman):
     points, colors = camera_hand.get_3d_points()
     # points, colors = np.zeros((10,3)),np.zeros((10,3))#-----------temp_use
     H_camera_hand_extrinsic = update_cam_extrinsics(bestman,camera_hand.dev_name)
-    world_points = ((H_camera_hand_extrinsic[:3,:3]@points.T).T+H_camera_hand_extrinsic[:3,3].T)
+    world_points = ((H_camera_hand_extrinsic[:3,:3]@points.T).T+H_camera_hand_extrinsic[:3,3].T).astype(np.float32)
     hand_cloud_rgb_var_len = np.hstack((world_points,((colors*255).astype(np.uint8)))) 
     hand_cloud_rgb = uniform_random_sample_points(hand_cloud_rgb_var_len,CONST_POINTS_NUM)
     # camera_hand.visualize_3d_points()
@@ -430,7 +434,7 @@ def get_cur_model_observation(camera_hand,camera_overhead,bestman):
     points, colors = camera_overhead.get_3d_points()
     # points, colors = np.zeros((10,3)),np.zeros((10,3))#-----------temp_use
     H_camera_overhead_extrinsic = update_cam_extrinsics(bestman,camera_overhead.dev_name)
-    world_points = ((H_camera_overhead_extrinsic[:3,:3]@points.T).T+H_camera_overhead_extrinsic[:3,3].T)
+    world_points = ((H_camera_overhead_extrinsic[:3,:3]@points.T).T+H_camera_overhead_extrinsic[:3,3].T).astype(np.float32)
     overhead_cloud_rgb_var_len = np.hstack((world_points,((colors*255).astype(np.uint8)))) 
     overhead_cloud_rgb = uniform_random_sample_points(overhead_cloud_rgb_var_len,CONST_POINTS_NUM)
     # camera_overhead.visualize_3d_points()
@@ -531,7 +535,7 @@ def get_base_points_from_cam_points(bestman,mouse_get_cam_3d_points,camera_name)
         # #camera_hand2eff
         # camera_hand2ee_quat = R.from_matrix(np.array([[0,1,0],[-1,0,0],[0,0,1]])).as_quat()
         # camera_hand2ee_aff = Affine([-0.05,-0.03,-0.04],camera_hand2ee_quat) #x y z
-        H_camera_hand2eff = np.array([[-3.79969778e-02,-9.98877888e-01,-2.82700204e-02,-0.0557490352],
+        H_camera_hand2eff = np.array([[-3.79969778e-02,-9.98877888e-01,-2.82700204e-02,-0.0457490352],
                                         [9.99277851e-01,-3.79838244e-02,-1.00233611e-03,-0.0278605145],
                                         [-7.25921195e-05,-2.82876910e-02,9.99599821e-01,-0.0525787876],
                                         [0.00000000e+00,0.00000000e+00,0.00000000e+00, 1.00000000e+00]])
@@ -541,23 +545,22 @@ def get_base_points_from_cam_points(bestman,mouse_get_cam_3d_points,camera_name)
         H_eff2base[:3,3] = np.array(cur_eff_pose.position)
         H_camera_hand2base = H_eff2base@H_camera_hand2eff
 
-
         if camera_name == "hand":
             H_camera_extrics = H_camera_hand2base
         elif camera_name == "overhead":
 
             # # [ 1280x720  p[643.178 357.433]  f[898.481 899.104]  Brown Conrady [0.144588 -0.485378 0.0004702 -4.61056e-05 0.44427] ]
             # H_camera_overhead2camera_hand = np.array(
-            #                                         [[-0.997181,-0.023506,0.071261,0.001421],
-            #                                         [0.062925,-0.779280,0.623508,-0.602406],
-            #                                         [0.040877,0.626235,0.778562,0.030220],
+            #                                        [[-0.990899,-0.042183,0.127831,-0.011011],
+            #                                         [0.106080,-0.829292,0.548653,-0.522800],
+            #                                         [0.082866,0.557220,0.826219,0.012114],
             #                                         [0.000000,0.000000,0.000000,1.000000]])
             # H_camera_overhead2base = H_camera_hand2base@H_camera_overhead2camera_hand
             # H_camera_extrics = H_camera_overhead2base
 
-            H_camera_extrics = np.array([[-0.02634658,  0.76111293, -0.64808347,  0.89516434],
-                                        [ 0.99890868, -0.00496784, -0.04644601,  0.00406642],
-                                        [-0.0385712 , -0.64860046, -0.76015112,  0.65447038],
+            H_camera_extrics = np.array([[-0.07092347,  0.81353088, -0.5771792 ,  0.82677765],
+                                        [ 0.99429651,  0.01145425, -0.10603806,  0.01910927],
+                                        [-0.07965476, -0.58140782, -0.80970292,  0.67453982],
                                         [ 0.        ,  0.        ,  0.        ,  1.        ]])
 
         H_obj2base = H_camera_extrics@H_obj2cam
@@ -619,7 +622,7 @@ def savg_inference(model_savg,cur_model_observation,predictor,stage1segmentation
     target_pose_orientation_xyzw = R.from_matrix(H_next_eff_trajectory[:3, :3]).as_quat()
     return target_pose_position,target_pose_orientation_xyzw
 
-
+home_js = [-0.116767,-0.476454,0.0720664,-1.69816,0.0354817,1.22252,0.744226]
 # 1.初始化机器人（原代码逻辑）
 bestman = Bestman_Real_Franka3()
 if bestman.initialize_robot() is not True:
@@ -670,14 +673,13 @@ if USE_SAM2:
         # First annotation
         ann_obj_id = 1  # give a unique id to each object we interact with (it can be any integers)
         ##! add points, `1` means positive click and `0` means negative click
-        points = np.array([[323,215],[325,224],[325,236]], dtype=np.float32)
+        points = np.array([[407,170],[411,179],[409,194]], dtype=np.float32)
         labels = np.array([1,1,1], dtype=np.int32)
         _, out_obj_ids, out_mask_logits = predictor.add_new_prompt(
             frame_idx=ann_frame_idx, obj_id=ann_obj_id, points=points, labels=labels
         )
-
         ann_obj_id = 2  # give a unique id to each object we interact with (it can be any integers)
-        points = np.array([[337,377],[341,395],[341,407]], dtype=np.float32)
+        points = np.array([[230,260],[236,266],[230,276]], dtype=np.float32)
         labels = np.array([1,1,1], dtype=np.int32)
         _, out_obj_ids, out_mask_logits = predictor.add_new_prompt(
             frame_idx=ann_frame_idx, obj_id=ann_obj_id, points=points, labels=labels
@@ -728,8 +730,8 @@ PRETRAINED_CKPT_PATH = "/home/liusong/ProgramFiles/REAP/SAVG/out/checkpoints/las
 model_savg = PoseACTCVAE(
     pc_in_dim=6,
     pc_dim=256,
-    pc_grid_size=0.005,
-    pc_tokens=512,
+    pc_grid_size=0.005,#0.0002
+    pc_tokens=256,
     geo_k=256,
     model_dim=256,
     latent_dim=32,
@@ -740,6 +742,7 @@ model_savg = PoseACTCVAE(
     dropout=0.1,
     pre_norm=True,
 ).to(DEVICE)
+
 ckpt = torch.load(PRETRAINED_CKPT_PATH)
 model_savg.load_state_dict(ckpt["model"])
 model_savg.eval()
@@ -766,7 +769,7 @@ while True:
     #Grasp Pose
     standard_quaternion = [1,0,0,0] # #[0.909507,-0.415611,-0.00766705,-0.00220353] #[1,0,0,0]
     standard_quaternion_twist = [ 0.7071068, 0.7071068, 0, 0 ]
-    new_red_gripper = 0.04
+    new_red_gripper = 0.045
 
 
     D_pre=0.05
@@ -814,7 +817,7 @@ while True:
     ###################
     gripper_open_flag = ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage1segmentation,stage2editing,predictor,model_savg,model_va,gripper_open_flag)
 
- 
+
     bestman.go_home()
 
     if sys.stdin in select.select([sys.stdin], [], [], 0)[0]:

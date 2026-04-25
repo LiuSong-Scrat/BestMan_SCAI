@@ -102,7 +102,7 @@ class SkillFranka3Database:
         # Move robot to target pose
         print('MOVING to grasp pose')
         target_pose = Pose(raw_pose[0], raw_pose[1])
-        bestman.move_eef_to_goal_pose(target_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
+        bestman.move_eef_to_goal_pose(target_pose, maxLinearVel=0.1, maxAngularVel=math.radians(45))
         print('MOVED to grasp pose')
 
 
@@ -183,7 +183,7 @@ class SkillFranka3Database:
 
         print('MOVING to place pose')
         place_pose = preparation_pose
-        bestman.move_eef_to_goal_pose(place_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
+        bestman.move_eef_to_goal_pose(place_pose, maxLinearVel=0.1, maxAngularVel=math.radians(45))
         bestman.open_gripper()
         print('MOVED to place pose')
 

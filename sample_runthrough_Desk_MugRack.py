@@ -11,6 +11,7 @@ from Motion_Planning.Manipulation.Skill_Franka3 import skill_database
 from Sensor.Camera_Realsense import Camera_Realsense
 from Dataset.scripts.data_collection import RealDataCollection
 from franky import Affine
+import copy
 CONST_POINTS_NUM=640*480
 
 
@@ -66,7 +67,7 @@ def collection_data_update(camera_hand,camera_overhead,bestman,sim_data_collecti
         sim_data_collection.hand_frame = img_hand_rgb 
         sim_data_collection.overhead_frame = img_overhead_rgb #-----------temp_use
         sim_data_collection.eff_angular = np.array([gripper_width]) #xyz/xyzw
-        time.sleep(0.02)
+        time.sleep(0.04)
 def get_base_points_from_cam_points(bestman,mouse_get_cam_3d_points,camera_name):
     base_3d_points = []
     for cam_obj_translation in mouse_get_cam_3d_points:
@@ -147,15 +148,26 @@ def update_cam_extrinsics(bestman,camera_name):
 
 
     return H_camera_extrics
+
+def force_move(bestman,pose, maxLinearVel=0.22, maxAngularVel=math.radians(45)):
+    while True:
+        try:
+            bestman.move_eef_to_goal_pose(pose, maxLinearVel=maxLinearVel, maxAngularVel=maxAngularVel)
+            print("Grasp SUCCESS------------------")
+            break
+        except Exception as e:
+            bestman.robot.recover_from_errors() 
+            print("Grasp ERROR------------------")
+            time.sleep(0.1)
 # 1.初始化机器人（原代码逻辑）
 bestman = Bestman_Real_Franka3()
 if bestman.initialize_robot() is not True:
     exit(-1)
 bestman.open_gripper()
-home_js = np.array([-0.11582,-0.476437,0.0715459,-1.69814,0.0351751,1.22258,0.745147])
-bestman.go_home()
+home_js = np.array([-0.07188314616233507, -0.5007457342122718, 0.07313486429670638, -2.7816527503720883, 0.05476125807473123, 2.2630911769337083, -0.7468963222873954])
+bestman.go_home(home_js)
 skill_franka3_database = skill_database.SkillFranka3Database()
-
+0.735709, 0.677228, -0.00406522, -0.00882531
 #2.Camera Initialize
 camera_devices = list( bestman.cfg.Camera.keys())
 camera_hand,camera_overhead = None,None
@@ -196,63 +208,46 @@ for i in range(50):
     collect_data_thread = threading.Thread(target=sim_data_collection.data_collection)
     collect_data_thread.start()
     #----------------------TASK EXECUTION----------------------# 
-    #Grasp Pose
-    standard_quaternion = [1,0,0,0] # #[0.909507,-0.415611,-0.00766705,-0.00220353] #[1,0,0,0]
-    standard_quaternion_twist = [ 0.7071068, 0.7071068, 0, 0 ]
+    #先点k杯根，然后点笔末端中心
     new_red_gripper = 0.045
+    standard_quaternion = [0.735709, 0.677228, -0.00406522, -0.00882531] # #[0.442212, 0.896865, 0.00592168, 0.00684362] #[0,1,0,0]
+    standard_quaternion_twist = [ 0.7071068, 0.7071068, 0, 0 ]
 
+    ##########################Grasp Pose##########################
     while True:
         try:
-            grasp_pose = [mouse_base_3d_points[0]-np.array([0,0,0.02])+np.array([0,0,new_red_gripper]), standard_quaternion] 
-            skill_franka3_database.grasp(bestman, grasp_pose, approaching_dir='top', retracting_dir='top', D_pre=0.05, D_ret=0.05)
-            print("SUCCESS------------------")
+            grasp_pose = [mouse_base_3d_points[0]+np.array([-0.08 ,-0.00 ,0.035]), standard_quaternion] 
+            skill_franka3_database.grasp(bestman, grasp_pose, approaching_dir='top', retracting_dir='top', D_pre=0.05, D_ret=0.05,force=0.1)
+            print("Grasp SUCCESS------------------")
             break
         except Exception as e:
             bestman.robot.recover_from_errors() 
-            print("ERROR------------------")
+            print("Grasp ERROR------------------")
             time.sleep(0.1)
+            
+    ##########################Place Pose##########################
+    place_pose = [mouse_base_3d_points[1]+np.array([-0.085 ,-0.0 ,0.08]), standard_quaternion] 
 
-    while True:
-        import math
-        def quat_to_yaw(quaternion):
-            """
-            从四元数 (x, y, z, w) 计算 yaw 角度（绕 Z 轴）
-            返回值：弧度 [-π, π]
-            """
-            x,y,z,w = quaternion
-            sinr_cosp = 2.0 * (w * z + x * y)
-            cosr_cosp = 1.0 - 2.0 * (y * y + z * z)
-            yaw = math.atan2(sinr_cosp, cosr_cosp)
-            return yaw
-        move_pose = [mouse_base_3d_points[1]+np.array([0,0,0.025])+np.array([0,0,new_red_gripper]), standard_quaternion] 
-        D_pre = 0.05
-        place_position = move_pose[0]
-        place_orientation = move_pose[1]
-        yaw = quat_to_yaw(place_orientation)
-        c = abs(math.cos(yaw))
-        s = abs(math.sin(yaw))
-        X,Y,Z = place_position
-        preparation_position = [X - np.sign(X) * D_pre * c, 
-                                Y + np.sign(Y) * D_pre * s, 
-                                Z]
-        try:
-            preparation_pose = Pose(preparation_position, place_orientation)
-            bestman.move_eef_to_goal_pose(preparation_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
+    pre_place_pose = copy.deepcopy(place_pose)
+    pre_place_pose[0] += np.array([0.0,0.05,0])
+    force_move(bestman,Pose(pre_place_pose[0], pre_place_pose[1]), maxLinearVel=0.3, maxAngularVel=math.radians(90))
 
-            skill_franka3_database.place(bestman, move_pose, retracting_dir='top', D_ret=0.05)
-            print("SUCCESS------------------")
-            break
-        except Exception as e:
-            bestman.robot.recover_from_errors() 
-            print("ERROR------------------")
-            time.sleep(0.1)
-    
+    force_move(bestman,Pose(place_pose[0], place_pose[1]), maxLinearVel=0.3, maxAngularVel=math.radians(90))
+
+
+    after_place_pose = copy.deepcopy(place_pose)
+    after_place_pose[0] += np.array([0.0,-0.03,-0.03])
+    force_move(bestman,Pose(after_place_pose[0], after_place_pose[1]), maxLinearVel=0.3, maxAngularVel=math.radians(90))
+
+
+    bestman.open_gripper()
+
 
     #2.Consumer Save & Restart
     sim_data_collection.episode_finish=True 
     sim_data_collection.data_save_hdf5()
     bestman.open_gripper()
-    bestman.go_home()
+    bestman.go_home(home_js)
 
 bestman.release_robot()
 exit(-1)

@@ -91,7 +91,7 @@ def update_cam_extrinsics(bestman,camera_name):
     # #camera_hand2eff
     # camera_hand2ee_quat = R.from_matrix(np.array([[0,1,0],[-1,0,0],[0,0,1]])).as_quat()
     # camera_hand2ee_aff = Affine([-0.05,-0.03,-0.04],camera_hand2ee_quat) #x y z
-    H_camera_hand2eff = np.array([[-3.79969778e-02,-9.98877888e-01,-2.82700204e-02,-0.0557490352],
+    H_camera_hand2eff = np.array([[-3.79969778e-02,-9.98877888e-01,-2.82700204e-02,-0.0457490352],
                                     [9.99277851e-01,-3.79838244e-02,-1.00233611e-03,-0.0278605145],
                                     [-7.25921195e-05,-2.82876910e-02,9.99599821e-01,-0.0525787876],
                                     [0.00000000e+00,0.00000000e+00,0.00000000e+00, 1.00000000e+00]])
@@ -108,23 +108,24 @@ def update_cam_extrinsics(bestman,camera_name):
 
         # # [ 1280x720  p[643.178 357.433]  f[898.481 899.104]  Brown Conrady [0.144588 -0.485378 0.0004702 -4.61056e-05 0.44427] ]
         # H_camera_overhead2camera_hand = np.array(
-        #                                         [[-0.997181,-0.023506,0.071261,0.001421],
-        #                                         [0.062925,-0.779280,0.623508,-0.602406],
-        #                                         [0.040877,0.626235,0.778562,0.030220],
+        #                                        [[-0.990899,-0.042183,0.127831,-0.011011],
+        #                                         [0.106080,-0.829292,0.548653,-0.522800],
+        #                                         [0.082866,0.557220,0.826219,0.012114],
         #                                         [0.000000,0.000000,0.000000,1.000000]])
         # H_camera_overhead2base = H_camera_hand2base@H_camera_overhead2camera_hand
         # H_camera_extrics = H_camera_overhead2base
 
-        H_camera_extrics = np.array([[-0.02634658,  0.76111293, -0.64808347,  0.89516434],
-                                    [ 0.99890868, -0.00496784, -0.04644601,  0.00406642],
-                                    [-0.0385712 , -0.64860046, -0.76015112,  0.65447038],
+        H_camera_extrics = np.array([[-0.07092347,  0.81353088, -0.5771792 ,  0.82677765],
+                                    [ 0.99429651,  0.01145425, -0.10603806,  0.01910927],
+                                    [-0.07965476, -0.58140782, -0.80970292,  0.67453982],
                                     [ 0.        ,  0.        ,  0.        ,  1.        ]])
-    return H_camera_extrics
 
+
+    return H_camera_extrics
 
 def ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage1segmentation,predictor,model_va,allow_gripper_open_flag,visualize):
     model_va.policy_reset()
-    model_va.policy.n_action_steps=20 #26
+    model_va.policy.n_action_steps=26 #26
     while True:
         if  len(model_va.predict_action_queue)<model_va.policy.horizon-model_va.policy.n_action_steps+2:
             cur_model_observation = get_cur_model_observation(camera_hand,camera_overhead, bestman)
@@ -145,7 +146,7 @@ def ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage1segme
             masked_scene_cloud_rgb.append(gripper_cloud_rgb)
 
 
-            # WORKSPACE DOWNSAMPLE
+            # WORKSPACE DOWNSAMPLE  
             overhead_cloud_rgb = cur_model_observation['point_cloud']
             overhead_cloud_rgb_workspace = point_cloud_filter(overhead_cloud_rgb)  
             # Objects Segmentation 
@@ -223,7 +224,7 @@ def ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage1segme
             allow_gripper_open_flag = 1
             bestman.close_gripper() 
             return allow_gripper_open_flag
-        if allow_gripper_open_flag==1 and inference_gripper_width>0.078:
+        if allow_gripper_open_flag==1 and inference_gripper_width>0.05:
             bestman.open_gripper()
             allow_gripper_open_flag = 0
             return allow_gripper_open_flag
@@ -375,7 +376,7 @@ def get_cur_model_observation(camera_hand,camera_overhead,bestman):
     points, colors = camera_hand.get_3d_points()
     # points, colors = np.zeros((10,3)),np.zeros((10,3))#-----------temp_use
     H_camera_hand_extrinsic = update_cam_extrinsics(bestman,camera_hand.dev_name)
-    world_points = ((H_camera_hand_extrinsic[:3,:3]@points.T).T+H_camera_hand_extrinsic[:3,3].T)
+    world_points = ((H_camera_hand_extrinsic[:3,:3]@points.T).T+H_camera_hand_extrinsic[:3,3].T).astype(np.float32)
     hand_cloud_rgb_var_len = np.hstack((world_points,((colors*255).astype(np.uint8)))) 
     hand_cloud_rgb = uniform_random_sample_points(hand_cloud_rgb_var_len,CONST_POINTS_NUM)
     # camera_hand.visualize_3d_points()
@@ -386,7 +387,7 @@ def get_cur_model_observation(camera_hand,camera_overhead,bestman):
     points, colors = camera_overhead.get_3d_points()
     # points, colors = np.zeros((10,3)),np.zeros((10,3))#-----------temp_use
     H_camera_overhead_extrinsic = update_cam_extrinsics(bestman,camera_overhead.dev_name)
-    world_points = ((H_camera_overhead_extrinsic[:3,:3]@points.T).T+H_camera_overhead_extrinsic[:3,3].T)
+    world_points = ((H_camera_overhead_extrinsic[:3,:3]@points.T).T+H_camera_overhead_extrinsic[:3,3].T).astype(np.float32)
     overhead_cloud_rgb_var_len = np.hstack((world_points,((colors*255).astype(np.uint8)))) 
     overhead_cloud_rgb = uniform_random_sample_points(overhead_cloud_rgb_var_len,CONST_POINTS_NUM)
     # camera_overhead.visualize_3d_points()
@@ -411,6 +412,7 @@ def get_cur_model_observation(camera_hand,camera_overhead,bestman):
     cur_model_observation['point_cloud'] = overhead_cloud_rgb
 
     return cur_model_observation
+
 
 def get_sam2_obj_masks(predictor,frame,obj_sets):
     out_obj_ids, out_mask_logits = predictor.track(frame)
@@ -489,7 +491,7 @@ def get_base_points_from_cam_points(bestman,mouse_get_cam_3d_points,camera_name)
         # #camera_hand2eff
         # camera_hand2ee_quat = R.from_matrix(np.array([[0,1,0],[-1,0,0],[0,0,1]])).as_quat()
         # camera_hand2ee_aff = Affine([-0.05,-0.03,-0.04],camera_hand2ee_quat) #x y z
-        H_camera_hand2eff = np.array([[-3.79969778e-02,-9.98877888e-01,-2.82700204e-02,-0.0557490352],
+        H_camera_hand2eff = np.array([[-3.79969778e-02,-9.98877888e-01,-2.82700204e-02,-0.0457490352],
                                         [9.99277851e-01,-3.79838244e-02,-1.00233611e-03,-0.0278605145],
                                         [-7.25921195e-05,-2.82876910e-02,9.99599821e-01,-0.0525787876],
                                         [0.00000000e+00,0.00000000e+00,0.00000000e+00, 1.00000000e+00]])
@@ -499,23 +501,22 @@ def get_base_points_from_cam_points(bestman,mouse_get_cam_3d_points,camera_name)
         H_eff2base[:3,3] = np.array(cur_eff_pose.position)
         H_camera_hand2base = H_eff2base@H_camera_hand2eff
 
-
         if camera_name == "hand":
             H_camera_extrics = H_camera_hand2base
         elif camera_name == "overhead":
 
             # # [ 1280x720  p[643.178 357.433]  f[898.481 899.104]  Brown Conrady [0.144588 -0.485378 0.0004702 -4.61056e-05 0.44427] ]
             # H_camera_overhead2camera_hand = np.array(
-            #                                         [[-0.997181,-0.023506,0.071261,0.001421],
-            #                                         [0.062925,-0.779280,0.623508,-0.602406],
-            #                                         [0.040877,0.626235,0.778562,0.030220],
+            #                                        [[-0.990899,-0.042183,0.127831,-0.011011],
+            #                                         [0.106080,-0.829292,0.548653,-0.522800],
+            #                                         [0.082866,0.557220,0.826219,0.012114],
             #                                         [0.000000,0.000000,0.000000,1.000000]])
             # H_camera_overhead2base = H_camera_hand2base@H_camera_overhead2camera_hand
             # H_camera_extrics = H_camera_overhead2base
 
-            H_camera_extrics = np.array([[-0.02634658,  0.76111293, -0.64808347,  0.89516434],
-                                        [ 0.99890868, -0.00496784, -0.04644601,  0.00406642],
-                                        [-0.0385712 , -0.64860046, -0.76015112,  0.65447038],
+            H_camera_extrics = np.array([[-0.07092347,  0.81353088, -0.5771792 ,  0.82677765],
+                                        [ 0.99429651,  0.01145425, -0.10603806,  0.01910927],
+                                        [-0.07965476, -0.58140782, -0.80970292,  0.67453982],
                                         [ 0.        ,  0.        ,  0.        ,  1.        ]])
 
         H_obj2base = H_camera_extrics@H_obj2cam
@@ -523,6 +524,7 @@ def get_base_points_from_cam_points(bestman,mouse_get_cam_3d_points,camera_name)
 
 
     return base_3d_points
+
 
 
 def savg_inference(model_savg,cur_model_observation,predictor,stage1segmentation,target_obj,cond_obj,visualize):
@@ -593,14 +595,20 @@ def sam2_initialize(task_name,object_marker_list):
     sys.path.append("/home/liusong/ProgramFiles/SAM2/sam2")
     from sam2.build_sam import build_sam2_camera_predictor
 
-    sam2_checkpoint = "/home/liusong/ProgramFiles/SAM2/sam2/checkpoints/sam2.1_hiera_small.pt"
-    model_cfg = "configs/sam2.1/sam2.1_hiera_s.yaml"
-    predictor = build_sam2_camera_predictor(model_cfg, sam2_checkpoint)
+    # sam2_checkpoint = "/home/liusong/ProgramFiles/SAM2/sam2/checkpoints/sam2.1_hiera_small.pt"
+    # model_cfg = "configs/sam2.1/sam2.1_hiera_s.yaml"
+    # Better -->Base_Plus SAM2-----------------
+    # Need Be Careful of the order of the object! SAM-Object Order Not Always Correct 
 
-    # img = cv2.resize(camera_overhead.get_rgb_image(),(640,480),cv2.INTER_LINEAR)
-    # cv2.imshow("img",img)
+    sam2_checkpoint = "/home/liusong/ProgramFiles/SAM2/sam2/checkpoints/sam2.1_hiera_base_plus.pt"
+    model_cfg = "configs/sam2.1/sam2.1_hiera_b+.yaml"
+    predictor = build_sam2_camera_predictor(model_cfg, sam2_checkpoint)
+    
+    # img_rgb = cv2.resize(camera_overhead.get_rgb_image(),(640,480),cv2.INTER_LINEAR)
+    # img_bgr = cv2.cvtColor(img_rgb,cv2.COLOR_BGR2RGB)
+    # cv2.imshow("img",img_bgr)
     # cv2.waitKey(0)
-    # # cv2.imwrite("/home/liusong/ProgramFiles/BestMan/Dataset/Images/PutStationeryBox.png",cv2.cvtColor(img,cv2.COLOR_RGB2BGR))
+    # cv2.imwrite("/home/liusong/ProgramFiles/BestMan/Dataset/Images/Desk_CubeStacking.png",img_bgr)
 
 
     frame = cv2.imread(f"/home/liusong/ProgramFiles/BestMan/Dataset/Images/{task_name}.png")
@@ -690,7 +698,8 @@ object_marker_dict = {"PutStationeryBox":[[[477,293],[485,320],[494,363]],[[342,
                       "CubeStacking":[[[327, 310],[337,323],[332,334]],[[441, 308],[454,321],[447,335]]],
                       "TrashSweep":[[[273, 205],[280,263],[284,286]],[[422, 339],[432,400],[437,457]]],
                       "MugRack":[[[459, 287],[468,344],[434,315]],[[329, 318],[303,337],[321,330]]],
-                      "Desk_CubeStacking":[[[323,215],[325,224],[325,236]],[[337,377],[341,395],[341,407]]]}
+                      "Desk_MugRack":[[[459, 287],[468,344],[434,315]],[[329, 318],[303,337],[321,330]]],
+                      "Desk_CubeStacking":[[[407,170],[411,179],[409,194]],[[230,260],[236,266],[230,276]]]}
 object_marker_list = object_marker_dict[task_name]
 predictor = sam2_initialize(task_name,object_marker_list)
 
@@ -702,7 +711,7 @@ model_savg = PoseACTCVAE(
     pc_in_dim=6,
     pc_dim=256,
     pc_grid_size=0.005,
-    pc_tokens=512,
+    pc_tokens=256,
     geo_k=256,
     model_dim=256,
     latent_dim=32,
