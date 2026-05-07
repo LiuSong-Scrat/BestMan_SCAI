@@ -1,0 +1,104 @@
+{
+    "codebase_version": "v3.0",
+    "robot_type": "my_robot",
+    "total_episodes": 1000,
+    "total_frames": 60000,
+    "total_tasks": 2,
+    "chunks_size": 1000,
+    "data_files_size_in_mb": 100,
+    "video_files_size_in_mb": 200,
+    "fps": 30,
+    "splits": {
+        "train": "0:1000"
+    },
+    "data_path": "data/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet",
+    "video_path": null,
+    "features": {
+        "action": {
+            "dtype": "float32",
+            "shape": [
+                10
+            ],
+            "names": [
+                "x",
+                "y",
+                "z",
+                "x1",
+                "y1",
+                "z1",
+                "x2",
+                "y2",
+                "z2",
+                "gripper"
+            ]
+        },
+        "observation.point_cloud": {
+            "dtype": "float32",
+            "shape": [
+                1024,
+                6
+            ],
+            "names": [
+                "x",
+                "y",
+                "z",
+                "r",
+                "g",
+                "b"
+            ]
+        },
+        "observation.state": {
+            "dtype": "float32",
+            "shape": [
+                10
+            ],
+            "names": [
+                "x",
+                "y",
+                "z",
+                "x1",
+                "y1",
+                "z1",
+                "x2",
+                "y2",
+                "z2",
+                "gripper"
+            ]
+        },
+        "timestamp": {
+            "dtype": "float32",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "frame_index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "episode_index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "task_index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        }
+    }
+}

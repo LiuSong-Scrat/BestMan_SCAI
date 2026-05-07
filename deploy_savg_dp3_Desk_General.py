@@ -4,8 +4,6 @@ import numpy as np
 import cv2
 import copy
 
-sys.path.append("/home/liusong/ProgramFiles/Huggingface/lerobot/lerobot/")
-from record_song import SmolVLA_ModelInference,ACT_ModelInference,DP_ModelInference
 sys.path.append("/home/liusong/ProgramFiles/REAP/StageGen")
 from stagegen.geometry_utils import GeometryUtils
 from stagegen.projection_utils import ProjectionUtils
@@ -125,7 +123,7 @@ def update_cam_extrinsics(bestman,camera_name):
 
 def ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage1segmentation,predictor,model_va,allow_gripper_open_flag,visualize):
     model_va.policy_reset()
-    model_va.policy.n_action_steps=26 #26
+    model_va.policy.n_action_steps=24 #26
     while True:
         if  len(model_va.predict_action_queue)<model_va.policy.horizon-model_va.policy.n_action_steps+2:
             cur_model_observation = get_cur_model_observation(camera_hand,camera_overhead, bestman)
@@ -262,7 +260,7 @@ def mission_execution(camera_hand,camera_overhead, bestman,stage1segmentation,pr
     subtasks = stage1segmentation.task_config['subtask']
     [print(subtask) for subtask in subtasks]
 
-    visualize=False
+    visualize=True
     allow_gripper_open_flag = 0
     for subtask in subtasks:
         subtask_label = subtask.split(',')
@@ -699,7 +697,7 @@ object_marker_dict = {"PutStationeryBox":[[[477,293],[485,320],[494,363]],[[342,
                       "TrashSweep":[[[273, 205],[280,263],[284,286]],[[422, 339],[432,400],[437,457]]],
                       "MugRack":[[[459, 287],[468,344],[434,315]],[[329, 318],[303,337],[321,330]]],
                       "Desk_MugRack":[[[459, 287],[468,344],[434,315]],[[329, 318],[303,337],[321,330]]],
-                      "Desk_CubeStacking":[[[407,170],[411,179],[409,194]],[[230,260],[236,266],[230,276]]]}
+                      "Desk_CubeStacking":[[[308,169],[308,180],[307,186]],[[391,327],[393,333],[390,352]]]}
 object_marker_list = object_marker_dict[task_name]
 predictor = sam2_initialize(task_name,object_marker_list)
 
