@@ -226,27 +226,32 @@ for i in range(50):
             time.sleep(0.1)
             
     ##########################Place Pose##########################
-    place_pose = [mouse_base_3d_points[1]+np.array([-0.085 ,-0.0 ,0.08]), standard_quaternion] 
+    place_pose = [mouse_base_3d_points[1]+np.array([-0.085 ,0.01 ,0.08]), standard_quaternion] 
 
     pre_place_pose = copy.deepcopy(place_pose)
     pre_place_pose[0] += np.array([0.0,0.05,0])
     force_move(bestman,Pose(pre_place_pose[0], pre_place_pose[1]), maxLinearVel=0.3, maxAngularVel=math.radians(90))
 
-    force_move(bestman,Pose(place_pose[0], place_pose[1]), maxLinearVel=0.3, maxAngularVel=math.radians(90))
+    force_move(bestman,Pose(place_pose[0], place_pose[1]), maxLinearVel=0.1, maxAngularVel=math.radians(90))
 
 
     after_place_pose = copy.deepcopy(place_pose)
-    after_place_pose[0] += np.array([0.0,-0.03,-0.03])
-    force_move(bestman,Pose(after_place_pose[0], after_place_pose[1]), maxLinearVel=0.3, maxAngularVel=math.radians(90))
-
+    after_place_pose[0] += np.array([0.0,-0.04,-0.04])
+    force_move(bestman,Pose(after_place_pose[0], after_place_pose[1]), maxLinearVel=0.1, maxAngularVel=math.radians(90))
 
     bestman.open_gripper()
+
+    finish_pose = copy.deepcopy(after_place_pose)
+    finish_pose[0] += np.array([0,0,0.05])
+    force_move(bestman,Pose(finish_pose[0], finish_pose[1]), maxLinearVel=0.2, maxAngularVel=math.radians(90))
+    
 
 
     #2.Consumer Save & Restart
     sim_data_collection.episode_finish=True 
     sim_data_collection.data_save_hdf5()
     bestman.open_gripper()
+    
     bestman.go_home(home_js)
 
 bestman.release_robot()

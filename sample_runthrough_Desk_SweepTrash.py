@@ -11,6 +11,7 @@ from Motion_Planning.Manipulation.Skill_Franka3 import skill_database
 from Sensor.Camera_Realsense import Camera_Realsense
 from Dataset.scripts.data_collection import RealDataCollection
 from franky import Affine
+import copy
 CONST_POINTS_NUM=640*480
 
 
@@ -66,7 +67,7 @@ def collection_data_update(camera_hand,camera_overhead,bestman,sim_data_collecti
         sim_data_collection.hand_frame = img_hand_rgb 
         sim_data_collection.overhead_frame = img_overhead_rgb #-----------temp_use
         sim_data_collection.eff_angular = np.array([gripper_width]) #xyz/xyzw
-        time.sleep(0.02)
+        time.sleep(0.04)
 def get_base_points_from_cam_points(bestman,mouse_get_cam_3d_points,camera_name):
     base_3d_points = []
     for cam_obj_translation in mouse_get_cam_3d_points:
@@ -92,31 +93,25 @@ def get_base_points_from_cam_points(bestman,mouse_get_cam_3d_points,camera_name)
         elif camera_name == "overhead":
 
             # # [ 1280x720  p[643.178 357.433]  f[898.481 899.104]  Brown Conrady [0.144588 -0.485378 0.0004702 -4.61056e-05 0.44427] ]
-            # H_camera_overhead2camera_hand = np.array([[-0.994305,-0.046932,0.095686,0.006064],
-            #                                             [0.093147,-0.818933,0.566278,-0.538343],
-            #                                             [0.051785,0.571966,0.818641,0.017486],
-            #                                             [0.000000,0.000000,0.000000,1.000000]]
-            #                                                                                                     )
-            # H_camera_hand2base=np.array([[-3.81971794e-02, -9.98831631e-01, -2.96031838e-02,
-            #                                 3.04561658e-01],
-            #                             [-9.99270213e-01,  3.81767610e-02,  1.25483779e-03,
-            #                                 2.79467731e-02],
-            #                             [-1.23218001e-04,  2.96295110e-02, -9.99560942e-01,
-            #                                 7.02004808e-01],
-            #                             [ 0.00000000e+00,  0.00000000e+00,  0.00000000e+00,
-            #                                 1.00000000e+00]])
+            # H_camera_overhead2camera_hand = np.array(
+            #                                        [[-0.990899,-0.042183,0.127831,-0.011011],
+            #                                         [0.106080,-0.829292,0.548653,-0.522800],
+            #                                         [0.082866,0.557220,0.826219,0.012114],
+            #                                         [0.000000,0.000000,0.000000,1.000000]])
             # H_camera_overhead2base = H_camera_hand2base@H_camera_overhead2camera_hand
             # H_camera_extrics = H_camera_overhead2base
 
-            H_camera_extrics = np.array([[-0.05659152,  0.80283684, -0.59350569,  0.84141181],
-                                    [ 0.9972004 ,  0.01635126, -0.07297025, -0.00164086],
-                                    [-0.04887985, -0.59597368, -0.80151482,  0.66857453],
-                                    [ 0.        ,  0.        ,  0.        ,  1.        ]])
+            H_camera_extrics = np.array([[-0.07092347,  0.81353088, -0.5771792 ,  0.82677765],
+                                        [ 0.99429651,  0.01145425, -0.10603806,  0.01910927],
+                                        [-0.07965476, -0.58140782, -0.80970292,  0.67453982],
+                                        [ 0.        ,  0.        ,  0.        ,  1.        ]])
 
         H_obj2base = H_camera_extrics@H_obj2cam
         base_3d_points.append(H_obj2base[:3,3])
 
+
     return base_3d_points
+
 
 def update_cam_extrinsics(bestman,camera_name):
     # #camera_hand2eff
@@ -138,37 +133,41 @@ def update_cam_extrinsics(bestman,camera_name):
     elif camera_name == "L515":
 
         # # [ 1280x720  p[643.178 357.433]  f[898.481 899.104]  Brown Conrady [0.144588 -0.485378 0.0004702 -4.61056e-05 0.44427] ]
-        # H_camera_overhead2camera_hand = np.array([[-0.994305,-0.046932,0.095686,0.006064],
-        #                                             [0.093147,-0.818933,0.566278,-0.538343],
-        #                                             [0.051785,0.571966,0.818641,0.017486],
-        #                                             [0.000000,0.000000,0.000000,1.000000]]
-        #                                                                                                     )
-        # H_camera_hand2base=np.array([[-3.81971794e-02, -9.98831631e-01, -2.96031838e-02,
-        #                                 3.04561658e-01],
-        #                             [-9.99270213e-01,  3.81767610e-02,  1.25483779e-03,
-        #                                 2.79467731e-02],
-        #                             [-1.23218001e-04,  2.96295110e-02, -9.99560942e-01,
-        #                                 7.02004808e-01],
-        #                             [ 0.00000000e+00,  0.00000000e+00,  0.00000000e+00,
-        #                                 1.00000000e+00]])
+        # H_camera_overhead2camera_hand = np.array(
+        #                                        [[-0.990899,-0.042183,0.127831,-0.011011],
+        #                                         [0.106080,-0.829292,0.548653,-0.522800],
+        #                                         [0.082866,0.557220,0.826219,0.012114],
+        #                                         [0.000000,0.000000,0.000000,1.000000]])
         # H_camera_overhead2base = H_camera_hand2base@H_camera_overhead2camera_hand
         # H_camera_extrics = H_camera_overhead2base
 
-        H_camera_extrics = np.array([[-0.05659152,  0.80283684, -0.59350569,  0.84141181],
-                                [ 0.9972004 ,  0.01635126, -0.07297025, -0.00164086],
-                                [-0.04887985, -0.59597368, -0.80151482,  0.66857453],
-                                [ 0.        ,  0.        ,  0.        ,  1.        ]])
-        
+        H_camera_extrics = np.array([[-0.07092347,  0.81353088, -0.5771792 ,  0.82677765],
+                                    [ 0.99429651,  0.01145425, -0.10603806,  0.01910927],
+                                    [-0.07965476, -0.58140782, -0.80970292,  0.67453982],
+                                    [ 0.        ,  0.        ,  0.        ,  1.        ]])
+
+
     return H_camera_extrics
+
+def force_move(bestman,pose, maxLinearVel=0.22, maxAngularVel=math.radians(45)):
+    while True:
+        try:
+            bestman.move_eef_to_goal_pose(pose, maxLinearVel=maxLinearVel, maxAngularVel=maxAngularVel)
+            print("Grasp SUCCESS------------------")
+            break
+        except Exception as e:
+            bestman.robot.recover_from_errors() 
+            print("Grasp ERROR------------------")
+            time.sleep(0.1)
 # 1.初始化机器人（原代码逻辑）
 bestman = Bestman_Real_Franka3()
 if bestman.initialize_robot() is not True:
     exit(-1)
 bestman.open_gripper()
-home_js = np.array([-0.11582,-0.476437,0.0715459,-1.69814,0.0351751,1.22258,0.745147])
-bestman.go_home()
+home_js = np.array([-0.07188314616233507, -0.5007457342122718, 0.07313486429670638, -2.7816527503720883, 0.05476125807473123, 2.2630911769337083, -0.7468963222873954])
+bestman.go_home(home_js)
 skill_franka3_database = skill_database.SkillFranka3Database()
-
+0.735709, 0.677228, -0.00406522, -0.00882531
 #2.Camera Initialize
 camera_devices = list( bestman.cfg.Camera.keys())
 camera_hand,camera_overhead = None,None
@@ -209,63 +208,55 @@ for i in range(50):
     collect_data_thread = threading.Thread(target=sim_data_collection.data_collection)
     collect_data_thread.start()
     #----------------------TASK EXECUTION----------------------# 
-    #Grasp Pose
-    standard_quaternion = [1,0,0,0] # #[0.909507,-0.415611,-0.00766705,-0.00220353] #[1,0,0,0]
-    standard_quaternion_twist = [ 0.7071068, 0.7071068, 0, 0 ]
+
+    # 0.428318 -0.0194331 0.215563
+    # 0.380897 0.00327846 0.172877 0.715368 0.681405 -0.0599808 -0.142613
+    # 0.475865 -0.000819702 0.192561  
+
     new_red_gripper = 0.045
+    standard_quaternion = [0.735709, 0.677228, -0.00406522, -0.00882531] # #[0.442212, 0.896865, 0.00592168, 0.00684362] #[0,1,0,0]
+    standard_quaternion_twist = [ 0.7071068, 0.7071068, 0, 0 ]
 
+    ##########################Grasp Pose##########################
     while True:
         try:
-            grasp_pose = [mouse_base_3d_points[0]-np.array([0,0,0.02])+np.array([0,0,new_red_gripper]), standard_quaternion] 
-            skill_franka3_database.grasp(bestman, grasp_pose, approaching_dir='top', retracting_dir='top', D_pre=0.05, D_ret=0.05)
-            print("SUCCESS------------------")
+            grasp_pose = [mouse_base_3d_points[0]-np.array([0,0.0,0.02])+np.array([0,0,new_red_gripper]), standard_quaternion] 
+            skill_franka3_database.grasp(bestman, grasp_pose, approaching_dir='top', retracting_dir='top', D_pre=0.05, D_ret=0.05,force=0.1)
+            print("Grasp SUCCESS------------------")
             break
         except Exception as e:
             bestman.robot.recover_from_errors() 
-            print("ERROR------------------")
+            print("Grasp ERROR------------------")
             time.sleep(0.1)
+            
+    ##########################sweep Pose##########################
+    sweep_pose1 = [mouse_base_3d_points[1]+np.array([-0.02,0.01,0.20])+np.array([0,0,new_red_gripper]), standard_quaternion] 
+    force_move(bestman,Pose(sweep_pose1[0], sweep_pose1[1]), maxLinearVel=0.3, maxAngularVel=math.radians(90))
 
-    while True:
-        import math
-        def quat_to_yaw(quaternion):
-            """
-            从四元数 (x, y, z, w) 计算 yaw 角度（绕 Z 轴）
-            返回值：弧度 [-π, π]
-            """
-            x,y,z,w = quaternion
-            sinr_cosp = 2.0 * (w * z + x * y)
-            cosr_cosp = 1.0 - 2.0 * (y * y + z * z)
-            yaw = math.atan2(sinr_cosp, cosr_cosp)
-            return yaw
-        move_pose = [mouse_base_3d_points[1]+np.array([0,0,0.025])+np.array([0,0,new_red_gripper]), standard_quaternion] 
-        D_pre = 0.05
-        place_position = move_pose[0]
-        place_orientation = move_pose[1]
-        yaw = quat_to_yaw(place_orientation)
-        c = abs(math.cos(yaw))
-        s = abs(math.sin(yaw))
-        X,Y,Z = place_position
-        preparation_position = [X - np.sign(X) * D_pre * c, 
-                                Y + np.sign(Y) * D_pre * s, 
-                                Z]
-        try:
-            preparation_pose = Pose(preparation_position, place_orientation)
-            bestman.move_eef_to_goal_pose(preparation_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45))
+    sweep_pose2 = copy.deepcopy(sweep_pose1)
+    sweep_pose2[0] += np.array([0.03,0,-0.05])
+    sweep_pose2[1] = np.array([0.702772,0.687181,-0.117215,-0.141967])
+    force_move(bestman,Pose(sweep_pose2[0], sweep_pose2[1]), maxLinearVel=0.3, maxAngularVel=math.radians(90))
 
-            skill_franka3_database.place(bestman, move_pose, retracting_dir='top', D_ret=0.05)
-            print("SUCCESS------------------")
-            break
-        except Exception as e:
-            bestman.robot.recover_from_errors() 
-            print("ERROR------------------")
-            time.sleep(0.1)
+    sweep_pose3 = copy.deepcopy(sweep_pose1)
+    sweep_pose3[0] += np.array([0.1,0,-0.03])
+    force_move(bestman,Pose(sweep_pose3[0], sweep_pose3[1]), maxLinearVel=0.3, maxAngularVel=math.radians(90))
+
+    finish_pose = copy.deepcopy(sweep_pose3)
+    finish_pose[0] += np.array([0,0,0.05])
+    force_move(bestman,Pose(finish_pose[0], finish_pose[1]), maxLinearVel=0.2, maxAngularVel=math.radians(90))
     
+    #No More Action Sleep for a while
+    bestman.open_gripper()
+    time.sleep(2)
 
-    # #2.Consumer Save & Restart
+
+    #2.Consumer Save & Restart
     sim_data_collection.episode_finish=True 
     sim_data_collection.data_save_hdf5()
     bestman.open_gripper()
-    bestman.go_home()
+    
+    bestman.go_home(home_js)
 
 bestman.release_robot()
 exit(-1)

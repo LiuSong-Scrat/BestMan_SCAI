@@ -265,46 +265,7 @@ def force_move(bestman,pose, maxLinearVel=0.22, maxAngularVel=math.radians(45)):
             time.sleep(0.1)
 
 
-def mission_execution(task_name,camera_hand,camera_overhead, bestman,predictor,model_va,visualize=False):
-    #4.load stage1 segmentation for camera parameters
-    stagegen_config_file = f"/home/liusong/ProgramFiles/REAP/StageGen/config/{task_name}.yaml"
-    stagegen_src_hdf5_path = f"/home/liusong/ProgramFiles/REAP/StageGen/source/{task_name}.hdf5"
-    stage1segmentation = Stage1Segmentation(stagegen_config_file, stagegen_src_hdf5_path)
-    # import pickle
-    # with open(f"/home/liusong/ProgramFiles/REAP/StageGen/out/{task_name}/{task_name}_stage1_result.pkl", 'rb') as file:
-    #     stage1_result = pickle.load(file)
-    # stage2editing = Stage2Editing(stage1_result)
-
-    object_marker_list = object_marker_dict[task_name]
-    predictor = predictor_initialize(predictor,task_name,object_marker_list)
-
-    # 6.LOAD SAVG MODEL
-    SAVG_PRETRAINED_CKPT_PATH = f"/home/liusong/ProgramFiles/REAP/SAVG/out/checkpoints/{task_name}.pt"
-    # model
-    model_savg = PoseACTCVAE(
-        pc_in_dim=6,
-        pc_dim=256,
-        pc_grid_size=0.005,
-        pc_tokens=256,
-        geo_k=256,
-        model_dim=256,
-        latent_dim=32,
-        n_enc_layers=4,
-        n_dec_layers=4,
-        heads=4,
-        ff_dim=1024,
-        dropout=0.1,
-        pre_norm=True,
-    ).to(DEVICE)
-    ckpt = torch.load(SAVG_PRETRAINED_CKPT_PATH)
-    model_savg.load_state_dict(ckpt["model"])
-    model_savg.eval()
-    assert os.path.isfile(SAVG_PRETRAINED_CKPT_PATH), f"ckpt not found: {SAVG_PRETRAINED_CKPT_PATH}"
-
-
-
-    
-    
+def mission_execution(camera_hand,camera_overhead, bestman,stage1segmentation,predictor,model_savg,model_va,visualize=False):
     ##############Subtask##########
     print("###########Subtask##########")
     subtasks = stage1segmentation.task_config['subtask']
@@ -640,7 +601,7 @@ def savg_inference(model_savg,cur_model_observation,predictor,stage1segmentation
     target_pose_orientation_xyzw = R.from_matrix(H_next_eff_trajectory[:3, :3]).as_quat()
     return target_pose_position,target_pose_orientation_xyzw
 
-def sam2_initialize():
+def sam2_initialize(task_name,object_marker_list):
     torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
     if torch.cuda.get_device_properties(0).major >= 8:
         # turn on tfloat32 for Ampere GPUs (https://pytorch.org/docs/stable/notes/cuda.html#tensorfloat-32-tf32-on-ampere-devices)
@@ -659,11 +620,6 @@ def sam2_initialize():
     sam2_checkpoint = "/home/liusong/ProgramFiles/SAM2/sam2/checkpoints/sam2.1_hiera_base_plus.pt"
     model_cfg = "configs/sam2.1/sam2.1_hiera_b+.yaml"
     predictor = build_sam2_camera_predictor(model_cfg, sam2_checkpoint)
-
-    return predictor
-
-def predictor_initialize(predictor,task_name,object_marker_list):
-
     
     # img_rgb = cv2.resize(camera_overhead.get_rgb_image(),(640,480),cv2.INTER_LINEAR)
     # img_bgr = cv2.cvtColor(img_rgb,cv2.COLOR_BGR2RGB)
@@ -723,20 +679,79 @@ if camera_overhead == None:
 time.sleep(bestman.cfg.Camera.init_delay)
 
 
+# 5.Config For Different Policies
+# {
+#     # ############3.PREPARE THE PARAMETERS
+#     # REAL_RANDOM = False 
+#     # IMAGE_STANDARD = False
+#     # ############4.READY FOR SAM2
+#     # USE_CAMERA = "overhead"#hand/overhead/all
+#     # USE_SAM2 = True
+#     # USE_MARK = "cloud_rgb"#arrowmark/dotmark/overlaymarkn
+#     # ############5.Model Mode
+#     # inference_model = "act"#dp3/smolvla/act/dp
+#     # action_mode = "absolute"#relative/absolute
+#     # action_type = "joint"#joint/pose/wait
+# }
+# gripper_width_thresh = 0.03
+# repo_id = "/home/liusong/ProgramFiles/BestMan/Dataset/dataset/test3/src_hdf5_to_lerobot/lerobot_datasets/processed_hdf5_to_lerobot_real_franka3_place_cube_joint_absolute/LiuSong-Scrat/smolvla"
+# policy_path = "/home/liusong/ProgramFiles/BestMan/Policy/trained_model/lerobot_act/act_real_franka3_place_cube_joint_absolute_50episodes/pretrained_model"
+# model_inference = ACT_ModelInference(repo_id,policy_path)
+
+
+
 task_name = "Desk_CubeStacking"
+#4.load stage1 segmentation for camera parameters
+stagegen_task_name = task_name
+stagegen_config_file = f"/home/liusong/ProgramFiles/REAP/StageGen/config/{task_name}.yaml"
+stagegen_src_hdf5_path = f"/home/liusong/ProgramFiles/REAP/StageGen/source/{task_name}.hdf5"
+stage1segmentation = Stage1Segmentation(stagegen_config_file, stagegen_src_hdf5_path)
+# import pickle
+# with open(f"/home/liusong/ProgramFiles/REAP/StageGen/out/{task_name}/{task_name}_stage1_result.pkl", 'rb') as file:
+#     stage1_result = pickle.load(file)
+# stage2editing = Stage2Editing(stage1_result)
+
+
 object_marker_dict = {"PutStationeryBox":[[[477,293],[485,320],[494,363]],[[342,306],[340,333],[341,362]]],
                       "CubeStacking":[[[327, 310],[337,323],[332,334]],[[441, 308],[454,321],[447,335]]],
                       "TrashSweep":[[[273, 205],[280,263],[284,286]],[[422, 339],[432,400],[437,457]]],
                       "MugRack":[[[459, 287],[468,344],[434,315]],[[329, 318],[303,337],[321,330]]],
                       "Desk_MugRack":[[[459, 287],[468,344],[434,315]],[[329, 318],[303,337],[321,330]]],
                       "Desk_CubeStacking":[[[308,169],[308,180],[307,186]],[[391,327],[393,333],[390,352]]]}
-predictor = sam2_initialize()
+object_marker_list = object_marker_dict[task_name]
+predictor = sam2_initialize(task_name,object_marker_list)
+
+
+# 6.LOAD SAVG MODEL
+SAVG_PRETRAINED_CKPT_PATH = f"/home/liusong/ProgramFiles/REAP/SAVG/out/checkpoints/{task_name}.pt"
+# model
+model_savg = PoseACTCVAE(
+    pc_in_dim=6,
+    pc_dim=256,
+    pc_grid_size=0.005,
+    pc_tokens=256,
+    geo_k=256,
+    model_dim=256,
+    latent_dim=32,
+    n_enc_layers=4,
+    n_dec_layers=4,
+    heads=4,
+    ff_dim=1024,
+    dropout=0.1,
+    pre_norm=True,
+).to(DEVICE)
+ckpt = torch.load(SAVG_PRETRAINED_CKPT_PATH)
+model_savg.load_state_dict(ckpt["model"])
+model_savg.eval()
+assert os.path.isfile(SAVG_PRETRAINED_CKPT_PATH), f"ckpt not found: {SAVG_PRETRAINED_CKPT_PATH}"
+
 
 
 # DP3_PRETRAINED_CKPT_PATH = f"/home/liusong/scp_receive/dp3/franka_real_simple_pose9/checkpoints/{task_name}.ckpt"
 # sys.path.append("/home/liusong/ProgramFiles/VA-VLA/DP3/3D-Diffusion-Policy/3D-Diffusion-Policy/")
 # from DP3_ModelInference import DP3_ModelInference
 # model_va = DP3_ModelInference(DP3_PRETRAINED_CKPT_PATH)
+
 
 model_va = SmolVLA_ModelInference(
     policy_path="/home/liusong/ProgramFiles/Huggingface/lerobot/outputs/train/my_smolvla_song1/checkpoints/last/pretrained_model",
@@ -745,7 +760,8 @@ model_va = SmolVLA_ModelInference(
 )
 
 
-mission_execution_flag= False
+
+mission_execution_flag= True
 visualize=True
 
 while True:
@@ -762,12 +778,13 @@ while True:
         #Window Overview
         mission_execution_thread = threading.Thread(
             target=mission_execution,
-            args=(task_name,camera_hand,camera_overhead, bestman,predictor,model_va,visualize))
+            args=(camera_hand,camera_overhead, bestman,stage1segmentation,predictor,model_savg,model_va,visualize))
         mission_execution_thread.start()
         mission_execution_flag = False
 
 
-    if sys.stdin in select.select([sys.stdin], [], [],  0.01)[0]:
+
+    if sys.stdin in select.select([sys.stdin], [], [],  0)[0]:
         line = sys.stdin.readline()
         pressed_key = line.strip()
         if line:
@@ -777,8 +794,6 @@ while True:
         if pressed_key == 'q':
             print("Program Over!")
             break
-        if pressed_key in object_marker_dict.keys():
-            task_name = pressed_key
-            mission_execution_flag = True
+        
 bestman.release_robot()
 exit(-1)
