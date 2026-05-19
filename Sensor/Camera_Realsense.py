@@ -26,6 +26,56 @@ from typing import Dict, Optional  # 确保包含 Optional
 from Robotics_API.Pose import Pose
 
 
+from dataclasses import dataclass, field
+from typing import Any
+
+
+@dataclass(frozen=True)
+class CameraIntrinsics:
+    """Pinhole intrinsics for an image whose depth is already aligned to it."""
+
+    width: int
+    height: int
+    fx: float
+    fy: float
+    ppx: float
+    ppy: float
+    coeffs: tuple[float, ...] = ()
+    model: str | None = None
+
+    @classmethod
+    def from_realsense(cls, intrinsics: Any) -> "CameraIntrinsics":
+        coeffs = tuple(float(v) for v in getattr(intrinsics, "coeffs", ()))
+        model = getattr(intrinsics, "model", None)
+        return cls(
+            width=int(intrinsics.width),
+            height=int(intrinsics.height),
+            fx=float(intrinsics.fx),
+            fy=float(intrinsics.fy),
+            ppx=float(intrinsics.ppx),
+            ppy=float(intrinsics.ppy),
+            coeffs=coeffs,
+            model=str(model) if model is not None else None,
+        )
+
+    def matrix(self) -> np.ndarray:
+        return np.array(
+            [[self.fx, 0.0, self.ppx], [0.0, self.fy, self.ppy], [0.0, 0.0, 1.0]],
+            dtype=np.float64,
+        )
+
+
+@dataclass
+class RGBDFrame:
+    """Aligned RealSense frame in color-camera pixel coordinates."""
+
+    color_bgr: np.ndarray
+    depth_m: np.ndarray
+    intrinsics: CameraIntrinsics
+    timestamp_ms: float | None = None
+    frame_number: int | None = None
+
+
 class Camera_Realsense:
     """RealSense D435 Camera (Eye-in-Hand)."""
 
@@ -93,11 +143,11 @@ class Camera_Realsense:
             raise RuntimeError("Could not retrieve frames from RealSense camera.")
 
 
-        intrinsics = color_frame.profile.as_video_stream_profile().get_intrinsics()
-        self.fx = intrinsics.fx
-        self.fy = intrinsics.fy
-        self.cx = intrinsics.ppx
-        self.cy = intrinsics.ppy
+        self.intrinsics = depth_frame.profile.as_video_stream_profile().get_intrinsics()
+        self.fx = self.intrinsics.fx
+        self.fy = self.intrinsics.fy
+        self.cx = self.intrinsics.ppx
+        self.cy = self.intrinsics.ppy
 
         # 将内参写回 cfg
         cfg.fx = self.fx
@@ -210,9 +260,24 @@ class Camera_Realsense:
             # 转换颜色图到 RGB 格式
             self.colors = cv2.cvtColor(color_image, cv2.COLOR_BGR2RGB)
             self.depths = depth_meters
+
         except Exception as e:
             print(f"Error during update: {e}")
             self.close()
+
+        timestamp,frame_number = color_frame.get_timestamp(), color_frame.get_frame_number()
+        return timestamp, frame_number
+    
+    def get_rgbd_image(self, enable_show=False, enable_save=False, filename=None):
+        timestamp,frame_number = self.update()
+        self.rgbd =  RGBDFrame(
+                            color_bgr=cv2.cvtColor(self.colors, cv2.COLOR_RGB2BGR),
+                            depth_m=self.depths,
+                            intrinsics=CameraIntrinsics.from_realsense(self.intrinsics),
+                            timestamp_ms=float(timestamp),
+                            frame_number=int(frame_number),
+                            )
+        return self.rgbd
 
 
     def get_rgb_image(self, enable_show=False, enable_save=False, filename=None):
@@ -649,3 +714,4 @@ class Camera_Realsense:
 
         # 等待线程完成（主线程在此阻塞）
         thread.join()
+

@@ -132,9 +132,9 @@ def update_cam_extrinsics(bestman,camera_name):
 
     return H_camera_extrics
 
-def ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage1segmentation,predictor,model_va,allow_gripper_open_flag,visualize,task="None"):
+def interaction_policy_inference(camera_hand,camera_overhead, bestman,stage1segmentation,predictor,model_va,allow_gripper_open_flag,visualize,task="None"):
     model_va.policy_reset()
-    model_va.policy.n_action_steps=24 #26
+    model_va.policy.n_action_steps=26 #26
     while True:
         if  len(model_va.predict_action_queue)<model_va.policy.horizon-model_va.policy.n_action_steps+2:
             cur_model_observation = get_cur_model_observation(camera_hand,camera_overhead, bestman)
@@ -148,7 +148,7 @@ def ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage1segme
             eff_pose_zyx_eular = cur_model_observation['pose_eular']
             eff_gripper_width = cur_model_observation['gripper_width']
             normalize_eff_angular = 0 if eff_gripper_width<0.04 else 1 
-            gripper_mesh = VisualizationUtils.update_gripper(normalize_eff_angular, eff_pose_zyx_eular, gripper_len = 0.06)
+            gripper_mesh = VisualizationUtils.update_gripper(normalize_eff_angular, eff_pose_zyx_eular+np.array([0.015, 0, 0,0,0,0]), gripper_len = 0.06)
             gripper_pcd = gripper_mesh.sample_points_uniformly(number_of_points=500)
             gripper_cloud_rgb = GeometryUtils.pcd_to_cloud_rgb(gripper_pcd)
             # ADD CloudRgb to Scene
@@ -194,11 +194,9 @@ def ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage1segme
 
 
 
-
         inference_action =  model_va.single_inference(cur_model_observation,visualize=visualize,task=task)
         if inference_action is None:
             continue
-        
         
         # Image Visualize
         overhead_pcd_filter = GeometryUtils.cloud_rgb_to_pcd(overhead_cloud_rgb_filter)
@@ -229,11 +227,11 @@ def ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage1segme
 
 
         inference_gripper_width=inference_action[-1]*2 #recover the normal scale
-        if allow_gripper_open_flag==0 and inference_gripper_width<0.03:
+        if allow_gripper_open_flag==0 and inference_gripper_width<0.06:
             allow_gripper_open_flag = 1
             bestman.close_gripper() 
             return allow_gripper_open_flag
-        if allow_gripper_open_flag==1 and inference_gripper_width>0.076:
+        if allow_gripper_open_flag==1 and inference_gripper_width>0.07:
             bestman.open_gripper()
             allow_gripper_open_flag = 0
             return allow_gripper_open_flag
@@ -322,7 +320,7 @@ def mission_execution(task_name,camera_hand,camera_overhead, bestman,predictor,m
             move_towards_pose = Pose(target_pose_position, target_pose_orientation_xyzw)
             force_move(bestman,move_towards_pose, maxLinearVel=0.3, maxAngularVel=math.radians(90))
         else:
-            allow_gripper_open_flag = ineraction_policy_inference(camera_hand,camera_overhead, bestman,stage1segmentation,predictor,model_va,allow_gripper_open_flag,visualize=visualize,task = subtask)
+            allow_gripper_open_flag = interaction_policy_inference(camera_hand,camera_overhead, bestman,stage1segmentation,predictor,model_va,allow_gripper_open_flag,visualize=visualize,task = subtask)
             if action=="place":
                 # Lift Up 5cm
                 cur_eff_pose = bestman.get_current_eef_pose()
@@ -348,7 +346,7 @@ def mission_execution(task_name,camera_hand,camera_overhead, bestman,predictor,m
             # eff_pose_zyx_eular = cur_model_observation['pose_eular']
             # eff_gripper_width = cur_model_observation['gripper_width']
             # normalize_eff_angular = 0 if eff_gripper_width<0.03 else 1
-            # gripper_mesh = VisualizationUtils.update_gripper(normalize_eff_angular, eff_pose_zyx_eular, gripper_len = 0.06)
+            # gripper_mesh = VisualizationUtils.updaqte_gripper(normalize_eff_angular, eff_pose_zyx_eular, gripper_len = 0.06)
             # gripper_pcd = gripper_mesh.sample_points_uniformly(number_of_points=500)
             # gripper_cloud_rgb = GeometryUtils.pcd_to_cloud_rgb(gripper_pcd)
 
@@ -449,6 +447,7 @@ def get_cur_model_observation(camera_hand,camera_overhead,bestman):
     # cur_model_observation['gripper_width'] = gripper_width*1000*0.5
     # cur_model_observation['pose_eular'] = np.concatenate((cur_eff_pose_position, cur_eff_pose_orientation_eular_zyx), axis=0)
     # cur_model_observation['point_cloud'] = overhead_cloud_rgb
+
 
 
     #DP3
@@ -669,7 +668,7 @@ def predictor_initialize(predictor,task_name,object_marker_list):
     # img_bgr = cv2.cvtColor(img_rgb,cv2.COLOR_BGR2RGB)
     # cv2.imshow("img",img_bgr)
     # cv2.waitKey(0)
-    # cv2.imwrite("/home/liusong/ProgramFiles/BestMan/Dataset/Images/Desk_CubeStacking.png",img_bgr)
+    # cv2.imwrite("/home/liusong/ProgramFiles/BestMan/Dataset/Images/Desk_TrashSweep.png",img_bgr)
 
 
     frame = cv2.imread(f"/home/liusong/ProgramFiles/BestMan/Dataset/Images/{task_name}.png")
@@ -698,15 +697,13 @@ def predictor_initialize(predictor,task_name,object_marker_list):
     return predictor
 
 
-
 # 1.初始化机器人（原代码逻辑）
 bestman = Bestman_Real_Franka3()
 if bestman.initialize_robot() is not True:
     exit(-1)
 bestman.open_gripper()
 #Twist 90 degree
-home_js = np.array([-0.07188314616233507, -0.5007457342122718, 0.07313486429670638, -2.7816527503720883, 0.05476125807473123, 2.2630911769337083, -0.7468963222873954])
-bestman.go_home(home_js)
+bestman.go_home()
 skill_franka3_database = skill_database.SkillFranka3Database()
 
 #2.Camera Initialize
@@ -723,15 +720,22 @@ if camera_overhead == None:
 time.sleep(bestman.cfg.Camera.init_delay)
 
 
+
+
 task_name = "Desk_CubeStacking"
 object_marker_dict = {"PutStationeryBox":[[[477,293],[485,320],[494,363]],[[342,306],[340,333],[341,362]]],
                       "CubeStacking":[[[327, 310],[337,323],[332,334]],[[441, 308],[454,321],[447,335]]],
                       "TrashSweep":[[[273, 205],[280,263],[284,286]],[[422, 339],[432,400],[437,457]]],
                       "MugRack":[[[459, 287],[468,344],[434,315]],[[329, 318],[303,337],[321,330]]],
                       "Desk_MugRack":[[[459, 287],[468,344],[434,315]],[[329, 318],[303,337],[321,330]]],
-                      "Desk_CubeStacking":[[[308,169],[308,180],[307,186]],[[391,327],[393,333],[390,352]]]}
+                      "Desk_CubeStacking":[[[308,169],[308,180],[307,186]],[[391,327],[393,333],[390,352]]],
+                      "Desk_TrashSweep":[[[490,132],[472,181],[471,203]],[[224,306],[208,358],[193,431]]],
+                      }
 predictor = sam2_initialize()
 
+x_home_js = np.array([-0.07188314616233507, -0.5007457342122718, 0.07313486429670638, -2.7816527503720883, 0.05476125807473123, 2.2630911769337083, -0.7468963222873954])
+y_home_js = np.array([-0.0684262,-0.512061,0.0723129,-2.794,0.0469305,2.28233,0.749217])
+home_js = y_home_js
 
 # DP3_PRETRAINED_CKPT_PATH = f"/home/liusong/scp_receive/dp3/franka_real_simple_pose9/checkpoints/{task_name}.ckpt"
 # sys.path.append("/home/liusong/ProgramFiles/VA-VLA/DP3/3D-Diffusion-Policy/3D-Diffusion-Policy/")
@@ -744,9 +748,8 @@ model_va = SmolVLA_ModelInference(
     device=DEVICE,
 )
 
-
 mission_execution_flag= False
-visualize=True
+visualize=False
 
 while True:
 
@@ -779,6 +782,12 @@ while True:
             break
         if pressed_key in object_marker_dict.keys():
             task_name = pressed_key
+            if task_name == "Desk_CubeStacking":
+                home_js = y_home_js
+            else:
+                home_js = x_home_js
+            bestman.go_home(home_js)
             mission_execution_flag = True
+
 bestman.release_robot()
 exit(-1)
