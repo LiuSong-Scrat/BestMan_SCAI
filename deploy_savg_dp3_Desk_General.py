@@ -148,7 +148,7 @@ def interaction_policy_inference(camera_hand,camera_overhead, bestman,stage1segm
             eff_pose_zyx_eular = cur_model_observation['pose_eular']
             eff_gripper_width = cur_model_observation['gripper_width']
             normalize_eff_angular = 0 if eff_gripper_width<0.04 else 1 
-            gripper_mesh = VisualizationUtils.update_gripper(normalize_eff_angular, eff_pose_zyx_eular+np.array([0.015, 0, 0,0,0,0]), gripper_len = 0.06)
+            gripper_mesh = VisualizationUtils.update_gripper(normalize_eff_angular, eff_pose_zyx_eular, gripper_len = 0.06)
             gripper_pcd = gripper_mesh.sample_points_uniformly(number_of_points=500)
             gripper_cloud_rgb = GeometryUtils.pcd_to_cloud_rgb(gripper_pcd)
             # ADD CloudRgb to Scene

@@ -401,6 +401,7 @@ parser.add_argument(
 )
 parser.add_argument("--disable-model-depth-correction", action="store_true")
 parser.add_argument("--model-depth-max-residual-m", type=float, default=0.18)
+parser.add_argument("--gripper-x-offset-cm", type=float, default=0.0) ##########Gripper X Offset
 parser.add_argument("--gripper-z-offset-cm", type=float, default=3.5) ##########Gripper Len Offset
 parser.add_argument("--disable-gripper-stabilizer", action="store_true")
 parser.add_argument("--gripper-position-alpha", type=float, default=0.55)
@@ -440,6 +441,7 @@ pipeline = HandPosePipeline(
         model_depth_max_residual_m=args.model_depth_max_residual_m,
     ),
     smoother=ExponentialPointSmoother(alpha=args.smooth_alpha),
+    gripper_x_offset_m=args.gripper_x_offset_cm / 100.0,
     gripper_z_offset_m=args.gripper_z_offset_cm / 100.0,
     gripper_stabilizer=None,
     track_match_distance_m=args.track_match_distance_m,
@@ -518,5 +520,4 @@ while True:
 # pcd.colors = o3d.utility.Vector3dVector(camera_overhead_points[1])
 # # 保存为ASCII格式的PLY文件
 # o3d.io.write_point_cloud("/home/liusong/桌面/temp1.ply", pcd, write_ascii=True)
-
 
