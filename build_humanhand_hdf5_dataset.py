@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import argparse
+import os
 import json
 import subprocess
 import sys
 import time
 from collections import deque
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -19,6 +21,7 @@ BESTMAN_ROOT = Path(__file__).resolve().parent
 HANDPOSE_ROOT = Path("/home/liusong/ProgramFiles/HandPoseExtraction")
 DEFAULT_POINTS_NUM = 640*480
 _VIDEO_CAPTURE_CACHE = {}
+_SEGMENT_WORKER_CONTEXT = None
 
 HAND_EDGES = (
     (0, 1),
@@ -95,7 +98,7 @@ def main() -> None:
     parser.add_argument("--fast", action="store_true")
     parser.add_argument("--force-handedness", choices=("left", "right"), default=None)
     parser.add_argument("--fusion-mode", choices=("model-depth", "keypoint-depth"), default="model-depth")
-    parser.add_argument("--gripper-x-offset-cm", type=float, default=0.0)
+    parser.add_argument("--gripper-x-offset-cm", type=float, default=1.5)
     parser.add_argument("--gripper-z-offset-cm", type=float, default=3.5)
     parser.add_argument("--reuse-jsonl", action="store_true", help="Do not run inference even if --run-inference is set.")
     parser.add_argument("--show-inference", action="store_true", help="Show OpenCV preview while running offline WiLoR.")
@@ -105,6 +108,15 @@ def main() -> None:
         "--segments",
         default="",
         help="Comma-separated inclusive frame ranges in record_index space, e.g. 0:120,150:260.",
+    )
+    parser.add_argument(
+        "--segment-workers",
+        type=int,
+        default=1,
+        help=(
+            "Parallel workers for non-interactive --segments export. "
+            "Use 1 for serial output, 0 for conservative auto. Keep small when --max-points is large."
+        ),
     )
     parser.add_argument(
         "--pose-frame",
@@ -177,19 +189,18 @@ def main() -> None:
     static_segments = parse_segments(args.segments)
     saved_paths: list[Path] = []
     if static_segments:
-        for segment in static_segments:
-            saved_paths.append(
-                save_segment_hdf5(
-                    segment,
-                    samples,
-                    input_dir,
-                    metadata,
-                    output_dir,
-                    camera_names,
-                    camera_to_world,
-                    args,
-                )
+        saved_paths.extend(
+            save_static_segments_hdf5(
+                static_segments,
+                samples,
+                input_dir,
+                metadata,
+                output_dir,
+                camera_names,
+                camera_to_world,
+                args,
             )
+        )
 
     if not args.no_interactive:
         saved_paths.extend(
@@ -458,6 +469,116 @@ def run_interactive_slicer(
     return saved_paths
 
 
+def save_static_segments_hdf5(
+    segments: list[Segment],
+    samples: list[tuple[dict, dict]],
+    input_dir: Path,
+    metadata: dict,
+    output_dir: Path,
+    camera_names: list[str],
+    camera_to_world: np.ndarray,
+    args: argparse.Namespace,
+) -> list[Path]:
+    output_paths = reserve_episode_paths(output_dir, len(segments))
+    worker_count = resolve_segment_workers(args.segment_workers, len(segments))
+    if worker_count <= 1:
+        return [
+            save_segment_hdf5(
+                segment,
+                samples,
+                input_dir,
+                metadata,
+                output_dir,
+                camera_names,
+                camera_to_world,
+                args,
+                output_path=path,
+                progress_enabled=True,
+            )
+            for segment, path in zip(segments, output_paths)
+        ]
+
+    print(f"Saving {len(segments)} static segments with {worker_count} worker processes.", flush=True)
+    result_paths: list[Path | None] = [None] * len(segments)
+    start_s = time.time()
+    with ProcessPoolExecutor(
+        max_workers=worker_count,
+        initializer=init_segment_worker,
+        initargs=(
+            samples,
+            str(input_dir),
+            metadata,
+            str(output_dir),
+            camera_names,
+            camera_to_world,
+            args,
+        ),
+    ) as executor:
+        future_to_index = {
+            executor.submit(save_segment_worker, (index, segment, str(output_paths[index]))): index
+            for index, segment in enumerate(segments)
+        }
+        completed = 0
+        for future in as_completed(future_to_index):
+            index = future_to_index[future]
+            result_paths[index] = future.result()
+            completed += 1
+            print_progress("Saving static segments", completed, len(segments), start_s)
+    sys.stderr.write("\n")
+    sys.stderr.flush()
+    return [path for path in result_paths if path is not None]
+
+
+def resolve_segment_workers(requested: int, segment_count: int) -> int:
+    if segment_count <= 1:
+        return 1
+    if requested < 0:
+        raise ValueError("--segment-workers must be >= 0")
+    if requested == 0:
+        return min(segment_count, max(1, os.cpu_count() or 1), 4)
+    return min(segment_count, max(1, requested))
+
+
+def init_segment_worker(
+    samples: list[tuple[dict, dict]],
+    input_dir: str,
+    metadata: dict,
+    output_dir: str,
+    camera_names: list[str],
+    camera_to_world: np.ndarray,
+    args: argparse.Namespace,
+) -> None:
+    global _SEGMENT_WORKER_CONTEXT, _VIDEO_CAPTURE_CACHE
+    _VIDEO_CAPTURE_CACHE = {}
+    _SEGMENT_WORKER_CONTEXT = {
+        "samples": samples,
+        "input_dir": Path(input_dir),
+        "metadata": metadata,
+        "output_dir": Path(output_dir),
+        "camera_names": camera_names,
+        "camera_to_world": np.asarray(camera_to_world),
+        "args": args,
+    }
+
+
+def save_segment_worker(task: tuple[int, Segment, str]) -> Path:
+    _index, segment, output_path = task
+    if _SEGMENT_WORKER_CONTEXT is None:
+        raise RuntimeError("Segment worker was not initialized.")
+    return save_segment_hdf5(
+        segment,
+        _SEGMENT_WORKER_CONTEXT["samples"],
+        _SEGMENT_WORKER_CONTEXT["input_dir"],
+        _SEGMENT_WORKER_CONTEXT["metadata"],
+        _SEGMENT_WORKER_CONTEXT["output_dir"],
+        _SEGMENT_WORKER_CONTEXT["camera_names"],
+        _SEGMENT_WORKER_CONTEXT["camera_to_world"],
+        _SEGMENT_WORKER_CONTEXT["args"],
+        output_path=Path(output_path),
+        progress_enabled=False,
+    )
+
+
 def save_segment_hdf5(
     segment: Segment,
     samples: list[tuple[dict, dict]],
@@ -467,6 +588,8 @@ def save_segment_hdf5(
     camera_names: list[str],
     camera_to_world: np.ndarray,
     args: argparse.Namespace,
+    output_path: Path | None = None,
+    progress_enabled: bool = True,
 ) -> Path:
     selected = [
         (frame, payload)
@@ -518,18 +641,19 @@ def save_segment_hdf5(
         keypoints_3d_m.append(joints)
         source_indices.append(int(frame_record.get("index", len(source_indices))))
         timestamps_ms.append(float(payload.get("timestamp_ms") or frame_record.get("timestamp_ms") or np.nan))
-        if frame_offset == 1 or frame_offset == total_frames or frame_offset % 25 == 0:
+        if progress_enabled and (frame_offset == 1 or frame_offset == total_frames or frame_offset % 25 == 0):
             print_progress(
                 f"Preparing segment {segment.start}:{segment.end}",
                 frame_offset,
                 total_frames,
                 start_s,
             )
-    sys.stderr.write("\n")
-    sys.stderr.flush()
+    if progress_enabled:
+        sys.stderr.write("\n")
+        sys.stderr.flush()
 
-    path = next_episode_path(output_dir)
-    with h5py.File(path, "w", rdcc_nbytes=2 * 1024**2) as root:
+    path = output_path if output_path is not None else next_episode_path(output_dir)
+    with h5py.File(path, "x", rdcc_nbytes=2 * 1024**2) as root:
         root.attrs["sim"] = False
         root.attrs["task"] = args.task
         root.attrs["source_rgbd_dir"] = str(input_dir)
@@ -575,19 +699,28 @@ def save_segment_hdf5(
         root.create_dataset("source_record_index", data=np.asarray(source_indices, dtype=np.int64))
         root.create_dataset("timestamp_ms", data=np.asarray(timestamps_ms, dtype=np.float64))
 
-    print(f"Saved {path} ({len(selected)} frames, record_index {segment.start}:{segment.end})")
+    if progress_enabled:
+        print(f"Saved {path} ({len(selected)} frames, record_index {segment.start}:{segment.end})")
     return path
 
 
+def reserve_episode_paths(output_dir: Path, count: int) -> list[Path]:
+    start_index = next_episode_index(output_dir)
+    return [output_dir / f"episode_{start_index + offset}.hdf5" for offset in range(count)]
+
+
 def next_episode_path(output_dir: Path) -> Path:
+    return output_dir / f"episode_{next_episode_index(output_dir)}.hdf5"
+
+
+def next_episode_index(output_dir: Path) -> int:
     existing = []
     for path in output_dir.glob("episode_*.hdf5"):
         try:
             existing.append(int(path.stem.split("_")[-1]))
         except ValueError:
             continue
-    next_index = max(existing, default=-1) + 1
-    return output_dir / f"episode_{next_index}.hdf5"
+    return max(existing, default=-1) + 1
 
 
 def load_rgbd_frame(

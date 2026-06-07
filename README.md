@@ -113,11 +113,13 @@ python build_humanhand_hdf5_dataset.py \
   --segments "$(cat outputs/rgbd_records/humanhand_demo_video/segments.txt)" \
   --transform-to-world \
   --camera-names overhead \
-  --max-points 4096
+  --max-points 4096 \
+  --segment-workers 4
 ```
 
 `build_humanhand_hdf5_dataset.py` 默认保存每帧 4096 个点。需要旧的全分辨率点云时显式加
-`--max-points 307200`，但 HDF5 会明显变大、切片也会更慢。
+`--max-points 307200`，但 HDF5 会明显变大、切片也会更慢。非交互式 `--segments`
+导出可以用 `--segment-workers N` 按 segment 并行；点云较大时建议先用 `2` 到 `4`。
 
 The saved HDF5 fields match `Dataset/scripts/data_collection.py`:
 
@@ -174,7 +176,7 @@ python record_bestman_rgbd.py \
 python build_humanhand_hdf5_dataset.py \
   --input outputs/rgbd_records/humanhand_demo_video \
   --output-dir Dataset/dataset/humanhand_offline \
-  --show-inference \
+  --run-inference \
   --wilor-repo /home/liusong/ProgramFiles/HandPoseExtraction/external/WiLoR \
   --fast \
   --force-handedness right \
@@ -199,5 +201,6 @@ python build_humanhand_hdf5_dataset.py \
   --no-interactive \
   --transform-to-world \
   --segments "$(cat outputs/rgbd_records/humanhand_demo_video/segments.txt)" \
-  --max-points 50000
-
+  --max-points 50000 \
+  --segment-workers 4
+  

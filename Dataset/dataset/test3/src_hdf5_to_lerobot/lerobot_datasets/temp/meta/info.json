@@ -1,15 +1,15 @@
 {
     "codebase_version": "v3.0",
     "robot_type": "my_robot",
-    "total_episodes": 51,
-    "total_frames": 9300,
+    "total_episodes": 200,
+    "total_frames": 30127,
     "total_tasks": 1,
     "chunks_size": 1000,
     "data_files_size_in_mb": 100,
     "video_files_size_in_mb": 200,
     "fps": 30,
     "splits": {
-        "train": "0:51"
+        "train": "0:200"
     },
     "data_path": "data/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet",
     "video_path": null,
@@ -30,21 +30,6 @@
                 "y2",
                 "z2",
                 "gripper"
-            ]
-        },
-        "observation.point_cloud": {
-            "dtype": "float32",
-            "shape": [
-                50000,
-                6
-            ],
-            "names": [
-                "x",
-                "y",
-                "z",
-                "r",
-                "g",
-                "b"
             ]
         },
         "observation.state": {

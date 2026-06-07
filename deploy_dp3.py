@@ -258,7 +258,7 @@ def mission_execution(camera_hand,camera_overhead, bestman,stage1segmentation,st
             # masked_scene_cloud_rgb = np.vstack(masked_scene_cloud_rgb)
 
             # # Align with Collection
-            # overhead_cloud_rgb_filter = GeometryUtils.random_repeat_sample_points(masked_scene_cloud_rgb,48*64)
+            # overhead_cloud_rgb_filter = GeometryUtils.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    (masked_scene_cloud_rgb,48*64)
             # points_xyz = overhead_cloud_rgb_filter[..., :3]
             # points_xyz, sample_indices = farthest_point_sampling(points_xyz)
             # sample_indices = sample_indices.cpu()

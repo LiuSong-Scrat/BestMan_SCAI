@@ -22,7 +22,7 @@ from eval import single_data_inference
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 sys.path.append("/home/liusong/ProgramFiles/Huggingface/lerobot/src/lerobot/scripts/")
-from smolvla_model_inference import SmolVLA_ModelInference
+from smolvla_model_inference import SmolVLA_ModelInference, pose9_to_traj6
 
 
 
@@ -44,6 +44,20 @@ import pytorch3d.ops as torch3d_ops
 
 
 CONST_POINTS_NUM=640*480
+POLICY_EXEC_ACTION_STEPS = 25
+POLICY_ACTION_DT = 0.08
+POLICY_MAX_LINEAR_VEL = 0.30
+POLICY_MAX_ANGULAR_VEL = math.radians(90)
+POLICY_USE_TARGET_VELOCITIES = False
+POLICY_REPLAN_INITIAL_WINDOW = 8
+POLICY_REPLAN_MIN_WINDOW = 1
+POLICY_REPLAN_MAX_FAILURES = 12
+POLICY_REPLAN_POSITION_TOL = 0.012
+POLICY_REPLAN_ROTATION_TOL = math.radians(12)
+POLICY_REPLAN_PATH_TOL = 0.04
+POLICY_RECOVER_SETTLE_TIME = 0.18
+GRIPPER_CLOSE_THRESHOLD = 0.03
+GRIPPER_OPEN_THRESHOLD = 0.06
 
 
 def point_cloud_filter(points):
@@ -132,11 +146,184 @@ def update_cam_extrinsics(bestman,camera_name):
 
     return H_camera_extrics
 
+def policy_action_to_traj6_gripper(action):
+    if torch.is_tensor(action):
+        action = action.detach().cpu().numpy()
+    action = np.asarray(action, dtype=np.float32).reshape(-1)
+    if action.shape[0] >= 10:
+        traj6 = pose9_to_traj6(action[:9])
+        return np.concatenate([traj6, action[-1:]], axis=0)
+    if action.shape[0] >= 7:
+        return action[:7]
+    raise ValueError(f"Expected policy action with 7 or 10 values, got shape {action.shape}")
+
+def collect_policy_action_chunk(model_va, first_action, chunk_size):
+    action_chunk = [policy_action_to_traj6_gripper(first_action)]
+    while len(action_chunk) < chunk_size and len(model_va.predict_action_queue) > 0:
+        action_chunk.append(policy_action_to_traj6_gripper(model_va.predict_action_queue.popleft()))
+    return np.stack(action_chunk, axis=0)
+
+def policy_action_to_pose(action):
+    target_pose_eular_zyx = np.asarray(action[3:6], dtype=float)
+    target_pose_orientation_xyzw = R.from_euler('zyx', target_pose_eular_zyx).as_quat()
+    target_pose_position = np.asarray(action[:3], dtype=float)
+    return Pose(target_pose_position, target_pose_orientation_xyzw)
+
+def pose_position(pose):
+    return np.asarray(pose.get_position(), dtype=float)
+
+def pose_rotation(pose):
+    return R.from_quat(np.asarray(pose.get_orientation(type="quaternion"), dtype=float))
+
+def pose_error(current_pose, target_pose):
+    position_error = np.linalg.norm(pose_position(current_pose) - pose_position(target_pose))
+    rotation_error = np.linalg.norm((pose_rotation(target_pose) * pose_rotation(current_pose).inv()).as_rotvec())
+    return position_error, rotation_error
+
+def estimate_resume_index(current_pose, target_poses, start_idx):
+    if start_idx >= len(target_poses):
+        return start_idx
+
+    reached_idx = None
+    for idx in range(start_idx, len(target_poses)):
+        position_error, rotation_error = pose_error(current_pose, target_poses[idx])
+        if position_error < POLICY_REPLAN_POSITION_TOL and rotation_error < POLICY_REPLAN_ROTATION_TOL:
+            reached_idx = idx
+    if reached_idx is not None:
+        return reached_idx + 1
+
+    if start_idx >= len(target_poses) - 1:
+        return start_idx
+
+    current_position = pose_position(current_pose)
+    positions = np.asarray([pose_position(pose) for pose in target_poses], dtype=float)
+    best_path_distance = float("inf")
+    best_resume_idx = start_idx
+
+    for idx in range(start_idx, len(target_poses) - 1):
+        start = positions[idx]
+        end = positions[idx + 1]
+        segment = end - start
+        segment_length_sq = float(np.dot(segment, segment))
+        if segment_length_sq < 1e-8:
+            continue
+        t = np.clip(float(np.dot(current_position - start, segment) / segment_length_sq), 0.0, 1.0)
+        closest = start + t * segment
+        path_distance = np.linalg.norm(current_position - closest)
+        if path_distance < best_path_distance:
+            best_path_distance = path_distance
+            best_resume_idx = idx + 1 if t > 0.5 else idx
+
+    if best_path_distance < POLICY_REPLAN_PATH_TOL:
+        return max(start_idx, best_resume_idx)
+    return start_idx
+
+def first_gripper_event(action_chunk, allow_gripper_open_flag):
+    for idx, action in enumerate(action_chunk):
+        inference_gripper_width = action[-1] * 2
+        if allow_gripper_open_flag == 0 and inference_gripper_width < GRIPPER_CLOSE_THRESHOLD:
+            return idx, "close", 1
+        if allow_gripper_open_flag == 1 and inference_gripper_width > GRIPPER_OPEN_THRESHOLD:
+            return idx, "open", 0
+    return None, None, allow_gripper_open_flag
+
+def execute_pose_segment(bestman, pose_segment):
+    if len(pose_segment) == 1:
+        bestman.move_eef_to_goal_pose(
+            pose_segment[0],
+            maxLinearVel=0.18,
+            maxAngularVel=math.radians(45),
+            asynchronous=False,
+        )
+        return
+
+    if POLICY_USE_TARGET_VELOCITIES:
+        try:
+            bestman.move_eef_through_goal_poses(
+                pose_segment,
+                maxLinearVel=POLICY_MAX_LINEAR_VEL,
+                maxAngularVel=POLICY_MAX_ANGULAR_VEL,
+                waypoint_dt=POLICY_ACTION_DT,
+                asynchronous=False,
+                use_target_velocities=True,
+            )
+            print(f"SUCCESS velocity trajectory points={len(pose_segment)}------------------")
+            return
+        except Exception as e:
+            bestman.robot.recover_from_errors()
+            print(f"Velocity waypoint trajectory failed, fallback to plain waypoints: {e}")
+
+    bestman.move_eef_through_goal_poses(
+        pose_segment,
+        maxLinearVel=POLICY_MAX_LINEAR_VEL,
+        maxAngularVel=POLICY_MAX_ANGULAR_VEL,
+        waypoint_dt=POLICY_ACTION_DT,
+        asynchronous=False,
+        use_target_velocities=False,
+    )
+
+def execute_policy_pose_chunk(bestman, move_towards_poses):
+    if len(move_towards_poses) == 0:
+        return 0
+
+    next_idx = estimate_resume_index(bestman.get_current_eef_pose(), move_towards_poses, 0)
+    window_size = min(POLICY_REPLAN_INITIAL_WINDOW, len(move_towards_poses))
+    failure_count = 0
+
+    while next_idx < len(move_towards_poses):
+        current_pose = bestman.get_current_eef_pose()
+        resumed_idx = estimate_resume_index(current_pose, move_towards_poses, next_idx)
+        if resumed_idx > next_idx:
+            print(f"Resume trajectory from waypoint {resumed_idx}/{len(move_towards_poses)}")
+            next_idx = resumed_idx
+            continue
+
+        segment_end = min(len(move_towards_poses), next_idx + window_size)
+        pose_segment = move_towards_poses[next_idx:segment_end]
+
+        try:
+            execute_pose_segment(bestman, pose_segment)
+            print(f"SUCCESS replanned segment {next_idx}:{segment_end}------------------")
+            next_idx = segment_end
+            failure_count = 0
+            if window_size < POLICY_REPLAN_INITIAL_WINDOW:
+                window_size += 1
+        except Exception as e:
+            failure_count += 1
+            bestman.robot.recover_from_errors()
+            time.sleep(POLICY_RECOVER_SETTLE_TIME)
+
+            current_pose = bestman.get_current_eef_pose()
+            resumed_idx = estimate_resume_index(current_pose, move_towards_poses, next_idx)
+            if resumed_idx > next_idx:
+                print(
+                    f"Trajectory interrupted after progress, replan remaining "
+                    f"{resumed_idx}/{len(move_towards_poses)}: {e}"
+                )
+                next_idx = resumed_idx
+                window_size = max(POLICY_REPLAN_MIN_WINDOW, min(window_size, POLICY_REPLAN_INITIAL_WINDOW))
+                continue
+
+            if window_size > POLICY_REPLAN_MIN_WINDOW:
+                window_size = max(POLICY_REPLAN_MIN_WINDOW, window_size // 2)
+                print(
+                    f"Trajectory segment {next_idx}:{segment_end} failed, "
+                    f"shrink window to {window_size} and replan from current pose: {e}"
+                )
+                continue
+
+            print(f"Single waypoint {next_idx} failed while replanning from current pose: {e}")
+            if failure_count >= POLICY_REPLAN_MAX_FAILURES:
+                raise
+
+    return len(move_towards_poses)
+
 def interaction_policy_inference(camera_hand,camera_overhead, bestman,stage1segmentation,predictor,model_va,allow_gripper_open_flag,visualize,task="None"):
     model_va.policy_reset()
-    model_va.policy.n_action_steps=26 #26
+    model_va.policy.n_action_steps=POLICY_EXEC_ACTION_STEPS #26
     while True:
         if  len(model_va.predict_action_queue)<model_va.policy.horizon-model_va.policy.n_action_steps+2:
+            model_va.policy_reset()
             cur_model_observation = get_cur_model_observation(camera_hand,camera_overhead, bestman)
             
             ###################CLOUD_RGB EXTRACT#############
@@ -152,37 +339,39 @@ def interaction_policy_inference(camera_hand,camera_overhead, bestman,stage1segm
             gripper_pcd = gripper_mesh.sample_points_uniformly(number_of_points=500)
             gripper_cloud_rgb = GeometryUtils.pcd_to_cloud_rgb(gripper_pcd)
             # ADD CloudRgb to Scene
-            masked_scene_cloud_rgb.append(gripper_cloud_rgb)
+            # masked_scene_cloud_rgb.append(gripper_cloud_rgb)
 
 
             # WORKSPACE DOWNSAMPLE  
             overhead_cloud_rgb = cur_model_observation['point_cloud']
             overhead_cloud_rgb_workspace = point_cloud_filter(overhead_cloud_rgb)  
-            # Objects Segmentation 
-            obj_sets = ["yellow_mug","blue_cube"]  
-            img_overhead_rgb = cur_model_observation['overhead']
-            obj_masks = get_sam2_obj_masks_fast(predictor,img_overhead_rgb,obj_sets)
-            # Objects CloudRgb Extracted 
-            scene_pcd = GeometryUtils.cloud_rgb_to_pcd(overhead_cloud_rgb_workspace)
+            # # Objects Segmentation 
+            # obj_sets = ["yellow_mug","blue_cube"]  
+            # img_overhead_rgb = cur_model_observation['overhead']
+            # obj_masks = get_sam2_obj_masks_fast(predictor,img_overhead_rgb,obj_sets)
+            # # Objects CloudRgb Extracted 
+            # scene_pcd = GeometryUtils.cloud_rgb_to_pcd(overhead_cloud_rgb_workspace)
             camera_intrics, H_world2image = stage1segmentation.setup_camera_transforms()
-            for obj_str, obj_mask in obj_masks.items():
-                obj_seg_pcd = ProjectionUtils.get_seg_pcd(scene_pcd, H_world2image, camera_intrics, obj_mask)
-                obj_seg_cloud_rgb = np.hstack((np.array(obj_seg_pcd.points), 
-                                                np.array(255 * np.array(obj_seg_pcd.colors)).astype(np.uint8)))
-                # obj_seg_cloud_rgb = remove_outliers_fast(obj_seg_cloud_rgb, nb_neighbors=50, std_ratio=1)
+            # for obj_str, obj_mask in obj_masks.items():
+            #     obj_seg_pcd = ProjectionUtils.get_seg_pcd(scene_pcd, H_world2image, camera_intrics, obj_mask)
+            #     obj_seg_cloud_rgb = np.hstack((np.array(obj_seg_pcd.points), 
+            #                                     np.array(255 * np.array(obj_seg_pcd.colors)).astype(np.uint8)))
+            #     # obj_seg_cloud_rgb = remove_outliers_fast(obj_seg_cloud_rgb, nb_neighbors=50, std_ratio=1)
                 
-                # ADD CloudRgb to Scene
-                masked_scene_cloud_rgb.append(obj_seg_cloud_rgb)
-            # Convert Scene CloudRgb to Numpy
-            masked_scene_cloud_rgb = np.vstack(masked_scene_cloud_rgb)
+            #     # ADD CloudRgb to Scene
+            #     masked_scene_cloud_rgb.append(obj_seg_cloud_rgb)
+            # # Convert Scene CloudRgb to Numpy
+            # masked_scene_cloud_rgb = np.vstack(masked_scene_cloud_rgb)
 
             # Align with Collection
-            overhead_cloud_rgb_filter = GeometryUtils.random_repeat_sample_points(masked_scene_cloud_rgb,48*64)
+            overhead_cloud_rgb_filter = GeometryUtils.random_repeat_sample_points(overhead_cloud_rgb_workspace,50000)
             points_xyz = overhead_cloud_rgb_filter[..., :3]
-            points_xyz, sample_indices = farthest_point_sampling(points_xyz)
+            points_xyz, sample_indices = farthest_point_sampling(points_xyz, num_points=49500)
             sample_indices = sample_indices.cpu()
             points_rgb = overhead_cloud_rgb_filter[sample_indices, 3:][0]
             points = np.hstack((points_xyz, points_rgb))
+            points = np.vstack((gripper_cloud_rgb,points))
+
             cur_model_observation["point_cloud"] = points
 
 
@@ -204,36 +393,41 @@ def interaction_policy_inference(camera_hand,camera_overhead, bestman,stage1segm
         cv2.imwrite("/home/liusong/temp/temp.png",rgb)
 
         ###################POSE CONTROAL#############
-        target_pose_eular_zyx=np.array(inference_action[3:6])
-        rotation = R.from_euler('zyx',target_pose_eular_zyx)#( x, y, z, w)
-        target_pose_orientation_xyzw = rotation.as_quat()
-        target_pose_position =np.array(inference_action[:3])
-
-        move_towards_pose = Pose(target_pose_position, target_pose_orientation_xyzw)
-
-        while True:
-            try:
-                bestman.move_eef_to_goal_pose(move_towards_pose, maxLinearVel=0.22, maxAngularVel=math.radians(45),asynchronous=False)
-                print("SUCCESS------------------")
-                break
-            except Exception as e:
-                bestman.robot.recover_from_errors() 
-                print("ERROR------------------")
-                time.sleep(0.1)
+        action_chunk = collect_policy_action_chunk(
+            model_va,
+            inference_action,
+            model_va.policy.n_action_steps,
+        )
+        gripper_event_idx, gripper_command, next_gripper_flag = first_gripper_event(
+            action_chunk,
+            allow_gripper_open_flag,
+        )
+        if gripper_event_idx is not None:
+            action_chunk_to_execute = action_chunk[:gripper_event_idx + 1]
+        else:
+            action_chunk_to_execute = action_chunk
+        move_towards_poses = [policy_action_to_pose(action) for action in action_chunk_to_execute]
+        
+        try:
+            executed_points = execute_policy_pose_chunk(bestman, move_towards_poses)
+        except Exception as e:
+            bestman.robot.recover_from_errors()
+            model_va.policy_reset()
+            print(f"ERROR all trajectory execution fallbacks failed: {e}------------------")
+            continue
 
         # ###################Gripper CONTROAL#############
         # inference_gripper_width=inference_action[-1]*2 #recover the normal scale
         # bestman.open_gripper_width(inference_gripper_width)
 
-
-        inference_gripper_width=inference_action[-1]*2 #recover the normal scale
-        if allow_gripper_open_flag==0 and inference_gripper_width<0.06:
-            allow_gripper_open_flag = 1
+        gripper_event_reached = gripper_event_idx is not None and gripper_event_idx < executed_points
+        if gripper_event_reached and gripper_command == "close":
+            allow_gripper_open_flag = next_gripper_flag
             bestman.close_gripper() 
             return allow_gripper_open_flag
-        if allow_gripper_open_flag==1 and inference_gripper_width>0.07:
+        if gripper_event_reached and gripper_command == "open":
             bestman.open_gripper()
-            allow_gripper_open_flag = 0
+            allow_gripper_open_flag = next_gripper_flag
             return allow_gripper_open_flag
 
         if sys.stdin in select.select([sys.stdin], [], [], 0.01)[0]:
@@ -315,12 +509,14 @@ def mission_execution(task_name,camera_hand,camera_overhead, bestman,predictor,m
         target_obj = subtask_label[1].strip() 
         cond_obj = subtask_label[3].strip()
         if action == "move_towards":
+            if subtask == "move_towards, mug, eff_open, None":
+                continue
             cur_model_observation = get_cur_model_observation(camera_hand,camera_overhead, bestman)
             target_pose_position,target_pose_orientation_xyzw = savg_inference(model_savg,cur_model_observation,predictor,stage1segmentation,target_obj,cond_obj,visualize=visualize)
             move_towards_pose = Pose(target_pose_position, target_pose_orientation_xyzw)
             force_move(bestman,move_towards_pose, maxLinearVel=0.3, maxAngularVel=math.radians(90))
         else:
-            allow_gripper_open_flag = interaction_policy_inference(camera_hand,camera_overhead, bestman,stage1segmentation,predictor,model_va,allow_gripper_open_flag,visualize=visualize,task = subtask)
+            allow_gripper_open_flag = interaction_policy_inference(camera_hand,camera_overhead, bestman,stage1segmentation,predictor,model_va,allow_gripper_open_flag,visualize=visualize,task = "Place the Red Cube on the Blue Cube")
             if action=="place":
                 # Lift Up 5cm
                 cur_eff_pose = bestman.get_current_eef_pose()
@@ -701,6 +897,7 @@ def predictor_initialize(predictor,task_name,object_marker_list):
 bestman = Bestman_Real_Franka3()
 if bestman.initialize_robot() is not True:
     exit(-1)
+bestman.install_exit_handlers()
 bestman.open_gripper()
 #Twist 90 degree
 bestman.go_home()
@@ -743,51 +940,75 @@ home_js = y_home_js
 # model_va = DP3_ModelInference(DP3_PRETRAINED_CKPT_PATH)
 
 model_va = SmolVLA_ModelInference(
-    policy_path="/home/liusong/ProgramFiles/Huggingface/lerobot/outputs/train/my_smolvla_song1/checkpoints/last/pretrained_model",
+    policy_path="/home/liusong/ProgramFiles/Huggingface/lerobot/outputs/train/my_smolvla_song_pointseg_e2e1/checkpoints/last/pretrained_model",
     policy_repo_id="/home/liusong/scp_receive/smolvla",
     device=DEVICE,
 )
 
+
+
 mission_execution_flag= False
 visualize=False
 
-while True:
+def close_cameras(*cameras):
+    closed_camera_ids = set()
+    for camera in cameras:
+        if camera is None or id(camera) in closed_camera_ids:
+            continue
+        closed_camera_ids.add(id(camera))
+        try:
+            camera.close()
+        except Exception as e:
+            print(f"Close camera failed: {e}")
 
-    window_name = "Overhead RGB"
-    cv2.namedWindow(window_name)
-    img_hand_rgb = camera_hand.get_rgb_image()
-    img_overhead_rgb = camera_overhead.get_rgb_image()
-    cv2.imshow(window_name, cv2.resize(cv2.cvtColor(img_overhead_rgb,cv2.COLOR_RGB2BGR),(640,360)))
-    cv2.waitKey(1)
+exit_code = 0
+try:
+    while True:
 
-    if mission_execution_flag == True:
-        
-        #Window Overview
-        mission_execution_thread = threading.Thread(
-            target=mission_execution,
-            args=(task_name,camera_hand,camera_overhead, bestman,predictor,model_va,visualize))
-        mission_execution_thread.start()
-        mission_execution_flag = False
+        window_name = "Overhead RGB"
+        cv2.namedWindow(window_name)
+        img_hand_rgb = camera_hand.get_rgb_image()
+        img_overhead_rgb = camera_overhead.get_rgb_image()
+        cv2.imshow(window_name, cv2.resize(cv2.cvtColor(img_overhead_rgb,cv2.COLOR_RGB2BGR),(640,360)))
+        cv2.waitKey(1)
+
+        if mission_execution_flag == True:
+            
+            #Window Overview
+            mission_execution_thread = threading.Thread(
+                target=mission_execution,
+                args=(task_name,camera_hand,camera_overhead, bestman,predictor,model_va,visualize))
+            mission_execution_thread.daemon = True
+            mission_execution_thread.start()
+            mission_execution_flag = False
 
 
-    if sys.stdin in select.select([sys.stdin], [], [],  0.01)[0]:
-        line = sys.stdin.readline()
-        pressed_key = line.strip()
-        if line:
-            print(f"You pressed: {pressed_key}")
-        if pressed_key == 'n':
-            mission_execution_flag = True
-        if pressed_key == 'q':
-            print("Program Over!")
-            break
-        if pressed_key in object_marker_dict.keys():
-            task_name = pressed_key
-            if task_name == "Desk_CubeStacking":
+        if sys.stdin in select.select([sys.stdin], [], [],  0.01)[0]:
+            line = sys.stdin.readline()
+            pressed_key = line.strip()
+            if line:
+                print(f"You pressed: {pressed_key}")
+            if pressed_key == 'n':
+                mission_execution_flag = True
+            if pressed_key == 'q':
+                print("Program Over!")
+                break
+            if pressed_key in object_marker_dict.keys():
+                task_name = pressed_key
+                if task_name == "Desk_CubeStacking":
+                    home_js = y_home_js
+                else:
+                    home_js = x_home_js
                 home_js = y_home_js
-            else:
-                home_js = x_home_js
-            bestman.go_home(home_js)
-            mission_execution_flag = True
+                bestman.go_home(home_js)
+                mission_execution_flag = True
+except KeyboardInterrupt:
+    signal_number = getattr(bestman, "_shutdown_signal", None)
+    exit_code = 128 + signal_number if signal_number is not None else 130
+    print("Shutdown requested. Cleaning up resources.")
+finally:
+    close_cameras(camera_hand, camera_overhead)
+    bestman.release_robot()
+    cv2.destroyAllWindows()
 
-bestman.release_robot()
-exit(-1)
+sys.exit(exit_code)

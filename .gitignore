@@ -1,5 +1,12 @@
 # 忽略所有大文件和生成文件
 
+#
+outputs/
+/outputs/**
+
+Dataset/dataset/test3/src_hdf5_to_lerobot/lerobot_datasets/
+/Dataset/dataset/test3/src_hdf5_to_lerobot/lerobot_datasets/**
+
 # 数据相关
 data/
 /data/**
