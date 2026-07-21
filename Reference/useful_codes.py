@@ -22,7 +22,7 @@ pcd.colors = o3d.utility.Vector3dVector(rgb)  # 注意：colors 也是 Vector3dV
 
 # 保存为 PLY 文件
 o3d.io.write_point_cloud("/home/liusong/temp/output.ply", pcd)
-
+# o3d.visualization.draw_geometries([pcd])
 print("PLY file saved as output.ply")
 
 

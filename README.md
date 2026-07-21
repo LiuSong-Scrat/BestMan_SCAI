@@ -164,7 +164,7 @@ python record_bestman_rgbd.py \
   --output outputs/rgbd_records/humanhand_demo_video \
   --num-frames 0 \
   --storage video \
-  --video-fps 30 \
+  --video-fps 16 \
   --space-toggle-recording 
 
 
@@ -181,9 +181,8 @@ python build_humanhand_hdf5_dataset.py \
   --fast \
   --force-handedness right \
   --fusion-mode model-depth \
-  --camera-names overhead,hand
+  --camera-names overhead,hand \
   --transform-to-world 
-  --show
 
 
 #直接用推理后的结果交互切片
@@ -202,5 +201,5 @@ python build_humanhand_hdf5_dataset.py \
   --transform-to-world \
   --segments "$(cat outputs/rgbd_records/humanhand_demo_video/segments.txt)" \
   --max-points 50000 \
-  --segment-workers 4
+  --segment-workers 16
   

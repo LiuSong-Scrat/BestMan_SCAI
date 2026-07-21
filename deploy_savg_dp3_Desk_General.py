@@ -33,6 +33,7 @@ import cv2
 import sys, os
 import threading
 import select
+from collections import deque
 from scipy.spatial.transform import Rotation as R
 from Robotics_API import Bestman_Real_Franka3, Pose
 from Motion_Planning.Manipulation.Skill_Franka3 import skill_database
@@ -44,20 +45,93 @@ import pytorch3d.ops as torch3d_ops
 
 
 CONST_POINTS_NUM=640*480
-POLICY_EXEC_ACTION_STEPS = 25
-POLICY_ACTION_DT = 0.08
-POLICY_MAX_LINEAR_VEL = 0.30
+POLICY_EXEC_ACTION_STEPS = 20
+POLICY_MAX_LINEAR_VEL = 0.35
 POLICY_MAX_ANGULAR_VEL = math.radians(90)
-POLICY_USE_TARGET_VELOCITIES = False
+
 POLICY_REPLAN_INITIAL_WINDOW = 8
 POLICY_REPLAN_MIN_WINDOW = 1
-POLICY_REPLAN_MAX_FAILURES = 12
-POLICY_REPLAN_POSITION_TOL = 0.012
-POLICY_REPLAN_ROTATION_TOL = math.radians(12)
-POLICY_REPLAN_PATH_TOL = 0.04
+POLICY_REPLAN_MAX_FAILURES = 2
+POLICY_REPLAN_POSITION_TOL = 0.001
+POLICY_REPLAN_ROTATION_TOL = math.radians(1)
 POLICY_RECOVER_SETTLE_TIME = 0.18
-GRIPPER_CLOSE_THRESHOLD = 0.03
-GRIPPER_OPEN_THRESHOLD = 0.06
+
+POLICY_ACTION_DT = 0.08
+POLICY_USE_TARGET_VELOCITIES = False
+POLICY_REPLAN_PATH_TOL = 0.0
+POLICY_VIRTUAL_GRIPPER_LEN = 0.02
+POLICY_VIRTUAL_GRIPPER_LOCAL_OFFSET = np.array([0.0, 0.0, -POLICY_VIRTUAL_GRIPPER_LEN], dtype=np.float32)
+VIRTUAL_GRIPPER_BAIS = 0.06
+
+GRIPPER_CLOSE_THRESHOLD = 0.04 #0.03
+GRIPPER_OPEN_THRESHOLD = 0.075
+
+TERMINAL_INPUT_LOCK = threading.Lock()
+POLICY_MANUAL_GRIPPER_KEYS = {"c", "o"}
+POLICY_ROLLBACK_KEY = "r"
+POLICY_ROLLBACK_CHUNKS = 2
+POLICY_MANUAL_CONTROL_KEYS = POLICY_MANUAL_GRIPPER_KEYS | {POLICY_ROLLBACK_KEY}
+POLICY_MANUAL_CONTROL_KEY_QUEUE = deque()
+POLICY_MANUAL_CONTROL_KEY_LOCK = threading.Lock()
+
+
+def poll_terminal_key(timeout=0.0):
+    if not TERMINAL_INPUT_LOCK.acquire(blocking=False):
+        return None
+    try:
+        if sys.stdin in select.select([sys.stdin], [], [], timeout)[0]:
+            line = sys.stdin.readline()
+            pressed_key = line.strip()
+            if line:
+                print(f"You pressed: {pressed_key}")
+            return pressed_key if pressed_key else None
+        return None
+    finally:
+        TERMINAL_INPUT_LOCK.release()
+
+
+def queue_policy_control_key(pressed_key):
+    if pressed_key not in POLICY_MANUAL_CONTROL_KEYS:
+        return False
+    with POLICY_MANUAL_CONTROL_KEY_LOCK:
+        POLICY_MANUAL_CONTROL_KEY_QUEUE.append(pressed_key)
+    return True
+
+
+def pop_policy_control_key():
+    with POLICY_MANUAL_CONTROL_KEY_LOCK:
+        if POLICY_ROLLBACK_KEY in POLICY_MANUAL_CONTROL_KEY_QUEUE:
+            POLICY_MANUAL_CONTROL_KEY_QUEUE.remove(POLICY_ROLLBACK_KEY)
+            return POLICY_ROLLBACK_KEY
+        if POLICY_MANUAL_CONTROL_KEY_QUEUE:
+            return POLICY_MANUAL_CONTROL_KEY_QUEUE.popleft()
+    return None
+
+
+def pop_policy_rollback_key():
+    with POLICY_MANUAL_CONTROL_KEY_LOCK:
+        if POLICY_ROLLBACK_KEY in POLICY_MANUAL_CONTROL_KEY_QUEUE:
+            POLICY_MANUAL_CONTROL_KEY_QUEUE.remove(POLICY_ROLLBACK_KEY)
+            return POLICY_ROLLBACK_KEY
+    return None
+
+
+def clear_policy_gripper_control_keys():
+    with POLICY_MANUAL_CONTROL_KEY_LOCK:
+        queued_rollback_keys = [
+            key for key in POLICY_MANUAL_CONTROL_KEY_QUEUE
+            if key == POLICY_ROLLBACK_KEY
+        ]
+        POLICY_MANUAL_CONTROL_KEY_QUEUE.clear()
+        POLICY_MANUAL_CONTROL_KEY_QUEUE.extend(queued_rollback_keys)
+
+
+def reset_policy_for_new_observation(model_va):
+    model_va.policy_reset()
+    if hasattr(model_va, "predict_action_queue") and model_va.predict_action_queue is not None:
+        model_va.predict_action_queue.clear()
+    return None
+
 
 
 def point_cloud_filter(points):
@@ -163,11 +237,27 @@ def collect_policy_action_chunk(model_va, first_action, chunk_size):
         action_chunk.append(policy_action_to_traj6_gripper(model_va.predict_action_queue.popleft()))
     return np.stack(action_chunk, axis=0)
 
+def offset_pose_eular_local(pose_eular, local_offset):
+    pose_eular = np.asarray(pose_eular, dtype=float).copy()
+    pose_rotation = R.from_euler('zyx', pose_eular[3:6])
+    pose_eular[:3] += pose_rotation.apply(np.asarray(local_offset, dtype=float))
+    return pose_eular
+
+def robot_pose_eular_to_policy_pose_eular(robot_pose_eular):
+    return offset_pose_eular_local(robot_pose_eular, POLICY_VIRTUAL_GRIPPER_LOCAL_OFFSET)
+
+def policy_pose_eular_to_robot_pose_eular(policy_pose_eular):
+    return offset_pose_eular_local(policy_pose_eular, -POLICY_VIRTUAL_GRIPPER_LOCAL_OFFSET)
+
+def pose_eular_to_pose(pose_eular):
+    pose_eular = np.asarray(pose_eular, dtype=float)
+    pose_orientation_xyzw = R.from_euler('zyx', pose_eular[3:6]).as_quat()
+    return Pose(pose_eular[:3], pose_orientation_xyzw)
+
 def policy_action_to_pose(action):
-    target_pose_eular_zyx = np.asarray(action[3:6], dtype=float)
-    target_pose_orientation_xyzw = R.from_euler('zyx', target_pose_eular_zyx).as_quat()
-    target_pose_position = np.asarray(action[:3], dtype=float)
-    return Pose(target_pose_position, target_pose_orientation_xyzw)
+    target_policy_pose_eular = np.asarray(action[:6], dtype=float)
+    target_robot_pose_eular = policy_pose_eular_to_robot_pose_eular(target_policy_pose_eular)
+    return pose_eular_to_pose(target_robot_pose_eular)
 
 def pose_position(pose):
     return np.asarray(pose.get_position(), dtype=float)
@@ -179,6 +269,33 @@ def pose_error(current_pose, target_pose):
     position_error = np.linalg.norm(pose_position(current_pose) - pose_position(target_pose))
     rotation_error = np.linalg.norm((pose_rotation(target_pose) * pose_rotation(current_pose).inv()).as_rotvec())
     return position_error, rotation_error
+
+def copy_pose(pose):
+    return Pose(
+        np.asarray(pose.get_position(), dtype=float).copy(),
+        np.asarray(pose.get_orientation(type="quaternion"), dtype=float).copy(),
+    )
+
+def rollback_policy_chunks(bestman, chunk_start_pose_history):
+    available_chunks = len(chunk_start_pose_history)
+    if available_chunks == 0:
+        print("Rollback requested, but no executed chunk start pose is available; reset policy from current pose.")
+        return False
+
+    rollback_chunks = min(POLICY_ROLLBACK_CHUNKS, available_chunks)
+    rollback_pose = copy_pose(chunk_start_pose_history[-rollback_chunks])
+    print(f"Rollback requested: move back before previous {rollback_chunks} policy chunk(s).")
+    if force_move(
+        bestman,
+        rollback_pose,
+        maxLinearVel=POLICY_MAX_LINEAR_VEL,
+        maxAngularVel=POLICY_MAX_ANGULAR_VEL,
+    ):
+        for _ in range(rollback_chunks):
+            chunk_start_pose_history.pop()
+        print(f"Rollback complete; {len(chunk_start_pose_history)} earlier chunk start pose(s) remain.")
+        return True
+    return False
 
 def estimate_resume_index(current_pose, target_poses, start_idx):
     if start_idx >= len(target_poses):
@@ -192,35 +309,15 @@ def estimate_resume_index(current_pose, target_poses, start_idx):
     if reached_idx is not None:
         return reached_idx + 1
 
-    if start_idx >= len(target_poses) - 1:
-        return start_idx
-
-    current_position = pose_position(current_pose)
-    positions = np.asarray([pose_position(pose) for pose in target_poses], dtype=float)
-    best_path_distance = float("inf")
-    best_resume_idx = start_idx
-
-    for idx in range(start_idx, len(target_poses) - 1):
-        start = positions[idx]
-        end = positions[idx + 1]
-        segment = end - start
-        segment_length_sq = float(np.dot(segment, segment))
-        if segment_length_sq < 1e-8:
-            continue
-        t = np.clip(float(np.dot(current_position - start, segment) / segment_length_sq), 0.0, 1.0)
-        closest = start + t * segment
-        path_distance = np.linalg.norm(current_position - closest)
-        if path_distance < best_path_distance:
-            best_path_distance = path_distance
-            best_resume_idx = idx + 1 if t > 0.5 else idx
-
-    if best_path_distance < POLICY_REPLAN_PATH_TOL:
-        return max(start_idx, best_resume_idx)
     return start_idx
 
-def first_gripper_event(action_chunk, allow_gripper_open_flag):
+def first_gripper_event(action_chunk, allow_gripper_open_flag, manual_gripper_key=None):
     for idx, action in enumerate(action_chunk):
-        inference_gripper_width = action[-1] * 2
+        inference_gripper_width = action[-1] 
+        if idx == 0 and manual_gripper_key == "c":
+            inference_gripper_width = GRIPPER_CLOSE_THRESHOLD - 1e-6
+        if idx == 0 and manual_gripper_key == "o":
+            inference_gripper_width = GRIPPER_OPEN_THRESHOLD + 1e-6
         if allow_gripper_open_flag == 0 and inference_gripper_width < GRIPPER_CLOSE_THRESHOLD:
             return idx, "close", 1
         if allow_gripper_open_flag == 1 and inference_gripper_width > GRIPPER_OPEN_THRESHOLD:
@@ -231,8 +328,8 @@ def execute_pose_segment(bestman, pose_segment):
     if len(pose_segment) == 1:
         bestman.move_eef_to_goal_pose(
             pose_segment[0],
-            maxLinearVel=0.18,
-            maxAngularVel=math.radians(45),
+            maxLinearVel=POLICY_MAX_LINEAR_VEL,
+            maxAngularVel=POLICY_MAX_ANGULAR_VEL,
             asynchronous=False,
         )
         return
@@ -266,24 +363,19 @@ def execute_policy_pose_chunk(bestman, move_towards_poses):
     if len(move_towards_poses) == 0:
         return 0
 
-    next_idx = estimate_resume_index(bestman.get_current_eef_pose(), move_towards_poses, 0)
+    next_idx = 0
     window_size = min(POLICY_REPLAN_INITIAL_WINDOW, len(move_towards_poses))
     failure_count = 0
+    last_successful_idx = -1
 
     while next_idx < len(move_towards_poses):
-        current_pose = bestman.get_current_eef_pose()
-        resumed_idx = estimate_resume_index(current_pose, move_towards_poses, next_idx)
-        if resumed_idx > next_idx:
-            print(f"Resume trajectory from waypoint {resumed_idx}/{len(move_towards_poses)}")
-            next_idx = resumed_idx
-            continue
-
         segment_end = min(len(move_towards_poses), next_idx + window_size)
         pose_segment = move_towards_poses[next_idx:segment_end]
 
         try:
             execute_pose_segment(bestman, pose_segment)
-            print(f"SUCCESS replanned segment {next_idx}:{segment_end}------------------")
+            # print(f"SUCCESS replanned segment {next_idx}:{segment_end}------------------")
+            last_successful_idx = max(last_successful_idx, segment_end - 1)
             next_idx = segment_end
             failure_count = 0
             if window_size < POLICY_REPLAN_INITIAL_WINDOW:
@@ -300,7 +392,9 @@ def execute_policy_pose_chunk(bestman, move_towards_poses):
                     f"Trajectory interrupted after progress, replan remaining "
                     f"{resumed_idx}/{len(move_towards_poses)}: {e}"
                 )
+                last_successful_idx = max(last_successful_idx, resumed_idx - 1)
                 next_idx = resumed_idx
+                failure_count = 0
                 window_size = max(POLICY_REPLAN_MIN_WINDOW, min(window_size, POLICY_REPLAN_INITIAL_WINDOW))
                 continue
 
@@ -314,16 +408,30 @@ def execute_policy_pose_chunk(bestman, move_towards_poses):
 
             print(f"Single waypoint {next_idx} failed while replanning from current pose: {e}")
             if failure_count >= POLICY_REPLAN_MAX_FAILURES:
-                raise
+                print(
+                    f"Skip waypoint {next_idx}/{len(move_towards_poses)} after "
+                    f"{failure_count} failed replanning attempts; try following waypoints."
+                )
+                next_idx += 1
+                failure_count = 0
+                window_size = POLICY_REPLAN_MIN_WINDOW
 
-    return len(move_towards_poses)
+    return last_successful_idx + 1
 
 def interaction_policy_inference(camera_hand,camera_overhead, bestman,stage1segmentation,predictor,model_va,allow_gripper_open_flag,visualize,task="None"):
-    model_va.policy_reset()
+    reset_policy_for_new_observation(model_va)
     model_va.policy.n_action_steps=POLICY_EXEC_ACTION_STEPS #26
+    executed_chunk_start_pose_history = deque()
     while True:
+        if pop_policy_rollback_key() == POLICY_ROLLBACK_KEY:
+            rollback_policy_chunks(bestman, executed_chunk_start_pose_history)
+            clear_policy_gripper_control_keys()
+            reset_policy_for_new_observation(model_va)
+            continue
+
         if  len(model_va.predict_action_queue)<model_va.policy.horizon-model_va.policy.n_action_steps+2:
-            model_va.policy_reset()
+
+            reset_policy_for_new_observation(model_va)
             cur_model_observation = get_cur_model_observation(camera_hand,camera_overhead, bestman)
             
             ###################CLOUD_RGB EXTRACT#############
@@ -335,7 +443,11 @@ def interaction_policy_inference(camera_hand,camera_overhead, bestman,stage1segm
             eff_pose_zyx_eular = cur_model_observation['pose_eular']
             eff_gripper_width = cur_model_observation['gripper_width']
             normalize_eff_angular = 0 if eff_gripper_width<0.04 else 1 
-            gripper_mesh = VisualizationUtils.update_gripper(normalize_eff_angular, eff_pose_zyx_eular, gripper_len = 0.06)
+            gripper_mesh = VisualizationUtils.update_gripper(
+                normalize_eff_angular,
+                eff_pose_zyx_eular,
+                gripper_len=VIRTUAL_GRIPPER_BAIS,
+            )
             gripper_pcd = gripper_mesh.sample_points_uniformly(number_of_points=500)
             gripper_cloud_rgb = GeometryUtils.pcd_to_cloud_rgb(gripper_pcd)
             # ADD CloudRgb to Scene
@@ -364,11 +476,13 @@ def interaction_policy_inference(camera_hand,camera_overhead, bestman,stage1segm
             # masked_scene_cloud_rgb = np.vstack(masked_scene_cloud_rgb)
 
             # Align with Collection
-            overhead_cloud_rgb_filter = GeometryUtils.random_repeat_sample_points(overhead_cloud_rgb_workspace,50000)
+            overhead_cloud_rgb_filter = GeometryUtils.random_repeat_sample_points(overhead_cloud_rgb_workspace,49500)
+            # points_xyz = overhead_cloud_rgb_filter[..., :3]
+            # points_xyz, sample_indices = farthest_point_sampling(points_xyz, num_points=49500)
+            # sample_indices = sample_indices.cpu()
+            # points_rgb = overhead_cloud_rgb_filter[sample_indices, 3:][0]
             points_xyz = overhead_cloud_rgb_filter[..., :3]
-            points_xyz, sample_indices = farthest_point_sampling(points_xyz, num_points=49500)
-            sample_indices = sample_indices.cpu()
-            points_rgb = overhead_cloud_rgb_filter[sample_indices, 3:][0]
+            points_rgb = overhead_cloud_rgb_filter[..., 3:]
             points = np.hstack((points_xyz, points_rgb))
             points = np.vstack((gripper_cloud_rgb,points))
 
@@ -388,9 +502,9 @@ def interaction_policy_inference(camera_hand,camera_overhead, bestman,stage1segm
             continue
         
         # Image Visualize
-        overhead_pcd_filter = GeometryUtils.cloud_rgb_to_pcd(overhead_cloud_rgb_filter)
-        depth, rgb = ProjectionUtils.project_pcd_to_image_depth(overhead_pcd_filter, H_world2image, camera_intrics, (480, 640))
-        cv2.imwrite("/home/liusong/temp/temp.png",rgb)
+        # overhead_pcd_filter = GeometryUtils.cloud_rgb_to_pcd(overhead_cloud_rgb_filter)
+        # depth, rgb = ProjectionUtils.project_pcd_to_image_depth(overhead_pcd_filter, H_world2image, camera_intrics, (480, 640))
+        # cv2.imwrite("/home/liusong/temp/temp.png",rgb)
 
         ###################POSE CONTROAL#############
         action_chunk = collect_policy_action_chunk(
@@ -398,23 +512,44 @@ def interaction_policy_inference(camera_hand,camera_overhead, bestman,stage1segm
             inference_action,
             model_va.policy.n_action_steps,
         )
+        policy_control_key = pop_policy_control_key()
+        if policy_control_key == POLICY_ROLLBACK_KEY:
+            rollback_policy_chunks(bestman, executed_chunk_start_pose_history)
+            clear_policy_gripper_control_keys()
+            reset_policy_for_new_observation(model_va)
+            continue
+
+        manual_gripper_key = (
+            policy_control_key
+            if policy_control_key in POLICY_MANUAL_GRIPPER_KEYS
+            else None
+        )
+        if manual_gripper_key == "c":
+            print("Manual policy gripper close key queued.")
+        if manual_gripper_key == "o":
+            print("Manual policy gripper open key queued.")
+
+
         gripper_event_idx, gripper_command, next_gripper_flag = first_gripper_event(
             action_chunk,
             allow_gripper_open_flag,
+            manual_gripper_key=manual_gripper_key,
         )
         if gripper_event_idx is not None:
             action_chunk_to_execute = action_chunk[:gripper_event_idx + 1]
         else:
             action_chunk_to_execute = action_chunk
         move_towards_poses = [policy_action_to_pose(action) for action in action_chunk_to_execute]
+        chunk_start_pose = copy_pose(bestman.get_current_eef_pose())
         
         try:
             executed_points = execute_policy_pose_chunk(bestman, move_towards_poses)
         except Exception as e:
-            bestman.robot.recover_from_errors()
-            model_va.policy_reset()
+            bestman.robot.recover_from_errors() 
+            reset_policy_for_new_observation(model_va)
             print(f"ERROR all trajectory execution fallbacks failed: {e}------------------")
             continue
+        executed_chunk_start_pose_history.append(chunk_start_pose)
 
         # ###################Gripper CONTROAL#############
         # inference_gripper_width=inference_action[-1]*2 #recover the normal scale
@@ -429,32 +564,37 @@ def interaction_policy_inference(camera_hand,camera_overhead, bestman,stage1segm
             bestman.open_gripper()
             allow_gripper_open_flag = next_gripper_flag
             return allow_gripper_open_flag
-
-        if sys.stdin in select.select([sys.stdin], [], [], 0.01)[0]:
-            line = sys.stdin.readline()
-            pressed_key = line.strip()
-            if line:
-                print(f"You pressed: {pressed_key}")
-            if pressed_key == 'o':
-                print("Open.................")
-                bestman.open_gripper()
-                allow_gripper_open_flag = 0
-                return allow_gripper_open_flag
-            if pressed_key == 'c':
-                print("Close.................")
-                bestman.close_gripper()
-                allow_gripper_open_flag = 1
-                return allow_gripper_open_flag
-def force_move(bestman,pose, maxLinearVel=0.22, maxAngularVel=math.radians(45)):
-    while True:
+def force_move(
+    bestman,
+    pose,
+    maxLinearVel=0.22,
+    maxAngularVel=POLICY_MAX_ANGULAR_VEL,
+    max_attempts=5,
+    retry_sleep=0.2,
+):
+    last_error = None
+    for attempt in range(1, max_attempts + 1):
         try:
             bestman.move_eef_to_goal_pose(pose, maxLinearVel=maxLinearVel, maxAngularVel=maxAngularVel)
-            print("Grasp SUCCESS------------------")
-            break
+            print("Force move SUCCESS------------------")
+            return True
         except Exception as e:
-            bestman.robot.recover_from_errors() 
-            print("Grasp ERROR------------------")
-            time.sleep(0.1)
+            last_error = e
+            try:
+                bestman.robot.recover_from_errors()
+            except Exception as recover_error:
+                print(f"Recover from errors failed: {recover_error}")
+            print(
+                f"Force move ERROR attempt {attempt}/{max_attempts}: "
+                f"{type(e).__name__}: {e}"
+            )
+            time.sleep(retry_sleep)
+
+    print(
+        f"Force move GIVE UP after {max_attempts} attempts: "
+        f"{type(last_error).__name__}: {last_error}"
+    )
+    return False
 
 
 def mission_execution(task_name,camera_hand,camera_overhead, bestman,predictor,model_va,visualize=False):
@@ -509,24 +649,32 @@ def mission_execution(task_name,camera_hand,camera_overhead, bestman,predictor,m
         target_obj = subtask_label[1].strip() 
         cond_obj = subtask_label[3].strip()
         if action == "move_towards":
-            if subtask == "move_towards, mug, eff_open, None":
-                continue
+            continue
+            # if subtask == "move_towards, mug, eff_open, None":
+            #     continue
             cur_model_observation = get_cur_model_observation(camera_hand,camera_overhead, bestman)
             target_pose_position,target_pose_orientation_xyzw = savg_inference(model_savg,cur_model_observation,predictor,stage1segmentation,target_obj,cond_obj,visualize=visualize)
-            move_towards_pose = Pose(target_pose_position, target_pose_orientation_xyzw)
-            force_move(bestman,move_towards_pose, maxLinearVel=0.3, maxAngularVel=math.radians(90))
+            target_policy_pose_eular = np.concatenate(
+                (
+                    target_pose_position,
+                    R.from_quat(target_pose_orientation_xyzw).as_euler('zyx'),
+                ),
+                axis=0,
+            )
+            move_towards_pose = pose_eular_to_pose(policy_pose_eular_to_robot_pose_eular(target_policy_pose_eular))
+            force_move(bestman,move_towards_pose, maxLinearVel=0.3, maxAngularVel=POLICY_MAX_ANGULAR_VEL)
         else:
-            allow_gripper_open_flag = interaction_policy_inference(camera_hand,camera_overhead, bestman,stage1segmentation,predictor,model_va,allow_gripper_open_flag,visualize=visualize,task = "Place the Red Cube on the Blue Cube")
+            allow_gripper_open_flag = interaction_policy_inference(camera_hand,camera_overhead, bestman,stage1segmentation,predictor,model_va,allow_gripper_open_flag,visualize=visualize,task = "Place the Yellow Mug on the Red Pole")
             if action=="place":
                 # Lift Up 5cm
                 cur_eff_pose = bestman.get_current_eef_pose()
                 move_towards_pose = Pose(cur_eff_pose.position+np.array([0,0,0.08]), cur_eff_pose.orientation)
-                force_move(bestman,move_towards_pose, maxLinearVel=0.3, maxAngularVel=math.radians(90))
-            if action=="pick":
-                # Lift Up 5cm
-                cur_eff_pose = bestman.get_current_eef_pose()
-                move_towards_pose = Pose(cur_eff_pose.position+np.array([0,0,0.05]), cur_eff_pose.orientation)
-                force_move(bestman,move_towards_pose, maxLinearVel=0.3, maxAngularVel=math.radians(90))
+                force_move(bestman,move_towards_pose, maxLinearVel=0.3, maxAngularVel=POLICY_MAX_ANGULAR_VEL)
+            # if action=="pick":
+            #     # Lift Up 5cm
+            #     cur_eff_pose = bestman.get_current_eef_pose()
+            #     move_towards_pose = Pose(cur_eff_pose.position+np.array([0,0,0.05]), cur_eff_pose.orientation)
+            #     force_move(bestman,move_towards_pose, maxLinearVel=0.3, maxAngularVel=POLICY_MAX_ANGULAR_VEL)
     # Go Back Home
     bestman.open_gripper()
     bestman.go_home(home_js)
@@ -611,6 +759,8 @@ def get_cur_model_observation(camera_hand,camera_overhead,bestman):
     cur_eff_pose_position = cur_eff_pose.position
     cur_eff_rotation =  R.from_quat(cur_eff_pose.orientation)
     cur_eff_pose_orientation_eular_zyx = cur_eff_rotation.as_euler('zyx')
+    robot_pose_eular = np.concatenate((cur_eff_pose_position, cur_eff_pose_orientation_eular_zyx), axis=0)
+    policy_pose_eular = robot_pose_eular_to_policy_pose_eular(robot_pose_eular)
     
 
     img_hand_rgb = camera_hand.get_rgb_image()
@@ -649,7 +799,7 @@ def get_cur_model_observation(camera_hand,camera_overhead,bestman):
     #DP3
     cur_model_observation = {'joint_1':None,'joint_2':None,'joint_3': None,'joint_4':None,'joint_5':None,'joint_6': None,'joint_7':None,'gripper_width':None,
                             'overhead':img_overhead_rgb,"hand":img_hand_rgb,"point_cloud":{},"pose_eular":{}}
-    cur_model_observation['pose_eular'] = np.concatenate((cur_eff_pose_position, cur_eff_pose_orientation_eular_zyx), axis=0)
+    cur_model_observation['pose_eular'] = policy_pose_eular
     cur_model_observation['gripper_width'] = gripper_width
     cur_model_observation['point_cloud'] = overhead_cloud_rgb
 
@@ -940,7 +1090,7 @@ home_js = y_home_js
 # model_va = DP3_ModelInference(DP3_PRETRAINED_CKPT_PATH)
 
 model_va = SmolVLA_ModelInference(
-    policy_path="/home/liusong/ProgramFiles/Huggingface/lerobot/outputs/train/my_smolvla_song_pointseg_e2e1/checkpoints/last/pretrained_model",
+    policy_path="/home/liusong/ProgramFiles/Huggingface/lerobot/benchmarks/song_real_libero/outputs/real_setting/train/ep_vla/checkpoints/last/pretrained_model",
     policy_repo_id="/home/liusong/scp_receive/smolvla",
     device=DEVICE,
 )
@@ -949,6 +1099,7 @@ model_va = SmolVLA_ModelInference(
 
 mission_execution_flag= False
 visualize=False
+mission_execution_thread = None
 
 def close_cameras(*cameras):
     closed_camera_ids = set()
@@ -983,11 +1134,15 @@ try:
             mission_execution_flag = False
 
 
-        if sys.stdin in select.select([sys.stdin], [], [],  0.01)[0]:
-            line = sys.stdin.readline()
-            pressed_key = line.strip()
-            if line:
-                print(f"You pressed: {pressed_key}")
+        pressed_key = poll_terminal_key(timeout=0.01)
+        if pressed_key is not None:
+            mission_is_running = (
+                mission_execution_thread is not None
+                and mission_execution_thread.is_alive()
+            )
+            if mission_is_running and queue_policy_control_key(pressed_key):
+                print(f"Queued policy control: {pressed_key}")
+                continue
             if pressed_key == 'n':
                 mission_execution_flag = True
             if pressed_key == 'q':

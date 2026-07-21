@@ -10,6 +10,12 @@ import atexit
 from scipy.spatial.transform import Rotation as R
 
 class Bestman_Real_Franka3:
+    SAFE_CARTESIAN_TRANSLATION_VEL = 0.40
+    SAFE_CARTESIAN_ROTATION_VEL = 2.20
+    SAFE_JOINT_VELOCITY_LIMITS = np.array([1.80, 1.80, 1.80, 1.80, 1.80, 1.80, 1.80])
+    CARTESIAN_RELATIVE_DYNAMICS = (0.7, 0.5, 0.5)
+    REACTION_RELATIVE_DYNAMICS = (0.15, 0.15, 0.10)
+
     def __init__(self):
 
         # load Configuration
@@ -127,7 +133,11 @@ class Bestman_Real_Franka3:
 
     def motion_move_safety_ensure(self,motion):
         # 创建一个反应动作，如果某种事件发生了，机器人就会执行该动作。
-        reaction_motion = CartesianMotion(Affine([0.0, 0.0, -0.2]), ReferenceType.Relative)  # Move up for 10cm
+        reaction_motion = CartesianMotion(
+            Affine([0.0, 0.0, -0.2]),
+            ReferenceType.Relative,
+            RelativeDynamicsFactor(*self.REACTION_RELATIVE_DYNAMICS),
+        )  # Move up for 10cm
         # 如果检测到Z方向的力大于30牛顿，就触发定义好的reaction_motion
         reaction = Reaction(Measure.FORCE_Z < -50.0, reaction_motion) #向上的力大于3N
         motion.add_reaction(reaction)
@@ -136,9 +146,12 @@ class Bestman_Real_Franka3:
         reaction.register_callback(reaction_callback)
 
     def _set_cartesian_motion_limits(self, maxLinearVel, maxAngularVel):
-        self.robot.translation_velocity_limit.set(maxLinearVel)
-        self.robot.rotation_velocity_limit.set(maxAngularVel)
-        self.robot.joint_velocity_limit.set(np.array([maxAngularVel]).repeat(7))
+        safe_linear_vel = min(float(maxLinearVel), self.SAFE_CARTESIAN_TRANSLATION_VEL)
+        safe_angular_vel = min(float(maxAngularVel), self.SAFE_CARTESIAN_ROTATION_VEL)
+        self.robot.translation_velocity_limit.set(safe_linear_vel)
+        self.robot.rotation_velocity_limit.set(safe_angular_vel)
+        self.robot.joint_velocity_limit.set(self.SAFE_JOINT_VELOCITY_LIMITS.copy())
+        return safe_linear_vel, safe_angular_vel
 
     @staticmethod
     def _limit_vector_norm(vector, max_norm):
@@ -214,7 +227,11 @@ class Bestman_Real_Franka3:
         self._set_cartesian_motion_limits(maxLinearVel, maxAngularVel)
 
         combined_transformation = self._pose_to_affine(goal_pose)
-        execute_motion = CartesianMotion(combined_transformation)
+        execute_motion = CartesianMotion(
+            combined_transformation,
+            ReferenceType.Absolute,
+            RelativeDynamicsFactor(*self.CARTESIAN_RELATIVE_DYNAMICS),
+        )
         self.motion_move_safety_ensure(execute_motion)
         self.robot.move(execute_motion,asynchronous=asynchronous)
         if settle_time > 0:
@@ -252,13 +269,13 @@ class Bestman_Real_Franka3:
             if not isinstance(goal_pose, Pose):
                 raise TypeError("goal_poses must contain Pose instances")
 
-        self._set_cartesian_motion_limits(maxLinearVel, maxAngularVel)
+        safe_linear_vel, safe_angular_vel = self._set_cartesian_motion_limits(maxLinearVel, maxAngularVel)
         if use_target_velocities:
             linear_velocities, angular_velocities = self._estimate_waypoint_velocities(
                 goal_poses,
                 waypoint_dt,
-                maxLinearVel,
-                maxAngularVel,
+                safe_linear_vel,
+                safe_angular_vel,
                 stop_at_end,
                 velocity_scale,
                 min_position_step,
@@ -279,7 +296,10 @@ class Bestman_Real_Franka3:
                 state = CartesianState(self._pose_to_affine(goal_pose))
             waypoints.append(CartesianWaypoint(state))
 
-        execute_motion = CartesianWaypointMotion(waypoints)
+        execute_motion = CartesianWaypointMotion(
+            waypoints,
+            relative_dynamics_factor=RelativeDynamicsFactor(*self.CARTESIAN_RELATIVE_DYNAMICS),
+        )
         self.motion_move_safety_ensure(execute_motion)
         self.robot.move(execute_motion, asynchronous=asynchronous)
 

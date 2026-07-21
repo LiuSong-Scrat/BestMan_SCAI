@@ -29,7 +29,7 @@
 	"light_on" : true,
 	"line_width" : 1.0,
 	"mesh_color_option" : 1,
-	"mesh_shade_option" : 0,
+	"mesh_shade_option" : 1,
 	"mesh_show_back_face" : false,
 	"mesh_show_wireframe" : false,
 	"point_color_option" : 0,
